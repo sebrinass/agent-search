@@ -1,261 +1,168 @@
-# SearXNG MCP Server
+# Augmented Search MCP Server
 
-An [MCP server](https://modelcontextprotocol.io/introduction) implementation that integrates the [SearXNG](https://docs.searxng.org) API, providing web search capabilities.
+基于 [SearXNG](https://docs.searxng.org) 的增强型 MCP 搜索服务器，集成混合检索、代码文档搜索等功能。
 
-[![https://nodei.co/npm/mcp-searxng.png?downloads=true&downloadRank=true&stars=true](https://nodei.co/npm/mcp-searxng.png?downloads=true&downloadRank=true&stars=true)](https://www.npmjs.com/package/mcp-searxng)
+## 功能特性
 
-[![https://badgen.net/docker/pulls/isokoliuk/mcp-searxng](https://badgen.net/docker/pulls/isokoliuk/mcp-searxng)](https://hub.docker.com/r/isokoliuk/mcp-searxng)
+### 核心功能
+- **网络搜索**：通用查询、新闻、文章搜索，支持分页和时间过滤
+- **URL 内容读取**：智能内容提取，支持 JS 渲染降级、正文提取
+- **Research 工具**：思考 + 搜索融合，记录每一步决策过程
+- **代码文档搜索**：集成 Context7，获取最新的库文档和代码示例
 
-<a href="https://glama.ai/mcp/servers/0j7jjyt7m9"><img width="380" height="200" src="https://glama.ai/mcp/servers/0j7jjyt7m9/badge" alt="SearXNG Server MCP server" /></a>
+### 增强特性
+- **混合检索**：RRF 融合 BM25 + 语义嵌入，提升搜索相关性
+- **智能缓存**：链接去重、URL 缓存、嵌入缓存三层缓存系统
+- **JS 渲染降级**：fetch → Happy DOM → 提示浏览器 MCP
+- **站内搜索**：支持 `site:` 参数限制搜索域名
 
-## Features
+## 工具列表
 
-- **Web Search**: General queries, news, articles, with pagination.
-- **URL Content Reading**: Advanced content extraction with pagination, section filtering, and heading extraction.
-- **Intelligent Caching**: URL content is cached with TTL (Time-To-Live) to improve performance and reduce redundant requests.
-- **Pagination**: Control which page of results to retrieve.
-- **Time Filtering**: Filter results by time range (day, month, year).
-- **Language Selection**: Filter results by preferred language.
-- **Safe Search**: Control content filtering level for search results.
+### search
+思考 + 并发搜索工具，支持混合检索和链接去重。
 
-## Tools
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| thought | string | 是 | 当前思考内容 |
+| thoughtNumber | number | 是 | 当前思考步骤编号 |
+| totalThoughts | number | 是 | 预计总思考步骤数 |
+| nextThoughtNeeded | boolean | 是 | 是否需要继续思考 |
+| searchedKeywords | string[] | 否 | 要搜索的关键词（最多3个并发） |
+| site | string | 否 | 限制搜索域名 |
 
-- **searxng_web_search**
-  - Execute web searches with pagination
-  - Inputs:
-    - `query` (string): The search query. This string is passed to external search services.
-    - `pageno` (number, optional): Search page number, starts at 1 (default 1)
-    - `time_range` (string, optional): Filter results by time range - one of: "day", "month", "year" (default: none)
-    - `language` (string, optional): Language code for results (e.g., "en", "fr", "de") or "all" (default: "all")
-    - `safesearch` (number, optional): Safe search filter level (0: None, 1: Moderate, 2: Strict) (default: instance setting)
+### read
+读取 URL 内容，支持 JS 渲染降级和正文提取。
 
-- **web_url_read**
-  - Read and convert the content from a URL to markdown with advanced content extraction options
-  - Inputs:
-    - `url` (string): The URL to fetch and process
-    - `startChar` (number, optional): Starting character position for content extraction (default: 0)
-    - `maxLength` (number, optional): Maximum number of characters to return
-    - `section` (string, optional): Extract content under a specific heading (searches for heading text)
-    - `paragraphRange` (string, optional): Return specific paragraph ranges (e.g., '1-5', '3', '10-')
-    - `readHeadings` (boolean, optional): Return only a list of headings instead of full content
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| url | string | 是 | URL 地址（支持 `\|` 分隔多个，如 `https://a.com\|https://b.com`） |
+| startChar | number | 否 | 起始字符位置 |
+| maxLength | number | 否 | 最大字符数 |
+| section | string | 否 | 提取指定章节 |
+| paragraphRange | string | 否 | 段落范围，如 1-5 |
+| readHeadings | boolean | 否 | 仅返回标题列表 |
+| timeoutMs | number | 否 | 超时时间（毫秒），默认 30000 |
 
-## Configuration
+### code_resolve
+解析库名为 Context7 兼容的库 ID。
 
-### Environment Variables
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| query | string | 是 | 用户问题（用于相关性排序） |
+| libraryName | string | 是 | 库名，如 react |
 
-#### Required
-- **`SEARXNG_URL`**: SearXNG instance URL (default: `http://localhost:8080`)
-  - Format: `<protocol>://<hostname>[:<port>]`
-  - Example: `https://search.example.com`
+### code_query
+查询库的文档和代码示例。
 
-#### Optional
-- **`AUTH_USERNAME`** / **`AUTH_PASSWORD`**: HTTP Basic Auth credentials for password-protected instances
-- **`USER_AGENT`**: Custom User-Agent header (e.g., `MyBot/1.0`)
-- **`HTTP_PROXY`** / **`HTTPS_PROXY`**: Proxy URLs for routing traffic
-  - Format: `http://[username:password@]proxy.host:port`
-- **`NO_PROXY`**: Comma-separated bypass list (e.g., `localhost,.internal,example.com`)
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| libraryId | string | 是 | 库 ID，如 /facebook/react |
+| query | string | 是 | 用户问题 |
 
-## Installation & Configuration
+## 环境变量配置
 
-### [NPX](https://www.npmjs.com/package/mcp-searxng)
+### 必填配置
+
+| 变量 | 说明 |
+|------|------|
+| `SEARXNG_URL` | SearXNG 实例地址 |
+
+### 可选配置
+
+#### 混合检索
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `ENABLE_EMBEDDING` | true | 启用混合检索 |
+| `OLLAMA_HOST` | http://localhost:11434 | Ollama 地址 |
+| `EMBEDDING_MODEL` | nomic-embed-text | 嵌入模型 |
+| `TOP_K` | 3 | 返回结果数量 |
+| `SEARCH_TIMEOUT_MS` | 30000 | 搜索超时时间（毫秒） |
+
+#### URL 读取
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `ENABLE_JS_RENDER` | true | 启用 JS 渲染降级 |
+| `ENABLE_READABILITY` | true | 启用正文提取 |
+| `FETCH_TIMEOUT_MS` | 30000 | URL 读取超时时间（毫秒） |
+
+#### 缓存系统
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `LINK_DEDUP_TTL` | 60 | 链接去重过期时间（秒） |
+| `URL_CACHE_TTL` | 60 | URL 缓存过期时间（秒） |
+| `URL_CACHE_SIZE` | 200 | URL 缓存最大条数 |
+| `EMBEDDING_CACHE_SIZE` | 500 | 嵌入缓存最大条数 |
+
+#### Context7
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `CONTEXT7_API_KEY` | - | Context7 API Key（可选） |
+
+#### 其他
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `AUTH_USERNAME` | - | HTTP Basic Auth 用户名 |
+| `AUTH_PASSWORD` | - | HTTP Basic Auth 密码 |
+| `USER_AGENT` | - | 自定义 User-Agent |
+| `HTTP_PROXY` | - | HTTP 代理地址 |
+| `HTTPS_PROXY` | - | HTTPS 代理地址 |
+| `MCP_HTTP_PORT` | - | HTTP 模式端口 |
+
+## 安装配置
+
+### NPX 方式
 
 ```json
 {
   "mcpServers": {
-    "searxng": {
+    "augmented-search": {
       "command": "npx",
-      "args": ["-y", "mcp-searxng"],
-      "env": {
-        "SEARXNG_URL": "YOUR_SEARXNG_INSTANCE_URL"
-      }
-    }
-  }
-}
-```
-
-<details>
-<summary>Full Configuration Example (All Options)</summary>
-
-```json
-{
-  "mcpServers": {
-    "searxng": {
-      "command": "npx",
-      "args": ["-y", "mcp-searxng"],
+      "args": ["-y", "augmented-search"],
       "env": {
         "SEARXNG_URL": "YOUR_SEARXNG_INSTANCE_URL",
-        "AUTH_USERNAME": "your_username",
-        "AUTH_PASSWORD": "your_password",
-        "USER_AGENT": "MyBot/1.0",
-        "HTTP_PROXY": "http://proxy.company.com:8080",
-        "HTTPS_PROXY": "http://proxy.company.com:8080",
-        "NO_PROXY": "localhost,127.0.0.1,.local,.internal"
+        "OLLAMA_HOST": "http://localhost:11434",
+        "CONTEXT7_API_KEY": "YOUR_API_KEY"
       }
     }
   }
 }
 ```
 
-**Note:** Mix and match environment variables as needed. All optional variables can be used independently or together.
-
-</details>
-
-### [NPM](https://www.npmjs.com/package/mcp-searxng)
+### Docker 方式
 
 ```bash
-npm install -g mcp-searxng
+docker build -t augmented-search:latest .
 ```
 
 ```json
 {
   "mcpServers": {
-    "searxng": {
-      "command": "mcp-searxng",
-      "env": {
-        "SEARXNG_URL": "YOUR_SEARXNG_INSTANCE_URL"
-      }
-    }
-  }
-}
-```
-
-<details>
-<summary>Full Configuration Example (All Options)</summary>
-
-```json
-{
-  "mcpServers": {
-    "searxng": {
-      "command": "mcp-searxng",
-      "env": {
-        "SEARXNG_URL": "YOUR_SEARXNG_INSTANCE_URL",
-        "AUTH_USERNAME": "your_username",
-        "AUTH_PASSWORD": "your_password",
-        "USER_AGENT": "MyBot/1.0",
-        "HTTP_PROXY": "http://proxy.company.com:8080",
-        "HTTPS_PROXY": "http://proxy.company.com:8080",
-        "NO_PROXY": "localhost,127.0.0.1,.local,.internal"
-      }
-    }
-  }
-}
-```
-
-</details>
-
-### Docker
-
-#### Using [Pre-built Image from Docker Hub](https://hub.docker.com/r/isokoliuk/mcp-searxng)
-
-```bash
-docker pull isokoliuk/mcp-searxng:latest
-```
-
-```json
-{
-  "mcpServers": {
-    "searxng": {
+    "augmented-search": {
       "command": "docker",
       "args": [
         "run", "-i", "--rm",
         "-e", "SEARXNG_URL",
-        "isokoliuk/mcp-searxng:latest"
-      ],
-      "env": {
-        "SEARXNG_URL": "YOUR_SEARXNG_INSTANCE_URL"
-      }
-    }
-  }
-}
-```
-
-<details>
-<summary>Full Configuration Example (All Options)</summary>
-
-```json
-{
-  "mcpServers": {
-    "searxng": {
-      "command": "docker",
-      "args": [
-        "run", "-i", "--rm",
-        "-e", "SEARXNG_URL",
-        "-e", "AUTH_USERNAME",
-        "-e", "AUTH_PASSWORD",
-        "-e", "USER_AGENT",
-        "-e", "HTTP_PROXY",
-        "-e", "HTTPS_PROXY",
-        "-e", "NO_PROXY",
-        "isokoliuk/mcp-searxng:latest"
+        "-e", "OLLAMA_HOST",
+        "augmented-search:latest"
       ],
       "env": {
         "SEARXNG_URL": "YOUR_SEARXNG_INSTANCE_URL",
-        "AUTH_USERNAME": "your_username",
-        "AUTH_PASSWORD": "your_password",
-        "USER_AGENT": "MyBot/1.0",
-        "HTTP_PROXY": "http://proxy.company.com:8080",
-        "HTTPS_PROXY": "http://proxy.company.com:8080",
-        "NO_PROXY": "localhost,127.0.0.1,.local,.internal"
+        "OLLAMA_HOST": "http://host.docker.internal:11434"
       }
     }
   }
 }
 ```
 
-**Note:** Add only the `-e` flags and env variables you need.
+### HTTP 模式
 
-</details>
-
-#### Build Locally
-
-```bash
-docker build -t mcp-searxng:latest -f Dockerfile .
-```
-
-Use the same configuration as above, replacing `isokoliuk/mcp-searxng:latest` with `mcp-searxng:latest`.
-
-#### Docker Compose
-
-Create a `docker-compose.yml` file:
-
-```yaml
-services:
-  mcp-searxng:
-    image: isokoliuk/mcp-searxng:latest
-    stdin_open: true
-    environment:
-      - SEARXNG_URL=YOUR_SEARXNG_INSTANCE_URL
-      # Add any optional variables as needed:
-      # - AUTH_USERNAME=your_username
-      # - AUTH_PASSWORD=your_password
-      # - USER_AGENT=MyBot/1.0
-      # - HTTP_PROXY=http://proxy.company.com:8080
-      # - HTTPS_PROXY=http://proxy.company.com:8080
-      # - NO_PROXY=localhost,127.0.0.1,.local,.internal
-```
-
-Then configure your MCP client:
+设置 `MCP_HTTP_PORT` 启用 HTTP 传输模式：
 
 ```json
 {
   "mcpServers": {
-    "searxng": {
-      "command": "docker-compose",
-      "args": ["run", "--rm", "mcp-searxng"]
-    }
-  }
-}
-```
-
-### HTTP Transport (Optional)
-
-The server supports both STDIO (default) and HTTP transports. Set `MCP_HTTP_PORT` to enable HTTP mode.
-
-```json
-{
-  "mcpServers": {
-    "searxng-http": {
-      "command": "mcp-searxng",
+    "augmented-search-http": {
+      "command": "augmented-search",
       "env": {
         "SEARXNG_URL": "YOUR_SEARXNG_INSTANCE_URL",
         "MCP_HTTP_PORT": "3000"
@@ -265,79 +172,50 @@ The server supports both STDIO (default) and HTTP transports. Set `MCP_HTTP_PORT
 }
 ```
 
-**HTTP Endpoints:**
-- **MCP Protocol**: `POST/GET/DELETE /mcp` 
-- **Health Check**: `GET /health`
+**HTTP 端点**：
+- MCP 协议：`POST/GET/DELETE /mcp`
+- 健康检查：`GET /health`
 
-**Testing:**
-```bash
-MCP_HTTP_PORT=3000 SEARXNG_URL=http://localhost:8080 mcp-searxng
-curl http://localhost:3000/health
-```
+## 开发指南
 
-## Running evals
+### 本地开发
 
 ```bash
-SEARXNG_URL=YOUR_URL OPENAI_API_KEY=your-key npx mcp-eval evals.ts src/index.ts
+# 安装依赖
+npm install
+
+# 开发模式
+npm run watch
+
+# 构建
+npm run build
+
+# 测试
+npm test
+
+# MCP Inspector
+npm run inspector
 ```
 
-## For Developers
+### 项目结构
 
-### Contributing
-
-We welcome contributions! Follow these guidelines:
-
-**Coding Standards:**
-- Use TypeScript with strict type safety
-- Follow existing error handling patterns
-- Write concise, informative error messages
-- Include unit tests for new functionality
-- Maintain 90%+ test coverage
-- Test with MCP inspector before submitting
-- Run evals to verify functionality
-
-**Workflow:**
-
-1. **Fork and clone:**
-   ```bash
-   git clone https://github.com/YOUR_USERNAME/mcp-searxng.git
-   cd mcp-searxng
-   git remote add upstream https://github.com/ihor-sokoliuk/mcp-searxng.git
-   ```
-
-2. **Setup:**
-   ```bash
-   npm install
-   npm run watch  # Development mode with file watching
-   ```
-
-3. **Development:**
-   ```bash
-   git checkout -b feature/your-feature-name
-   # Make changes in src/
-   npm run build
-   npm test
-   npm run test:coverage
-   npm run inspector
-   ```
-
-4. **Submit:**
-   ```bash
-   git commit -m "feat: description"
-   git push origin feature/your-feature-name
-   # Create PR on GitHub
-   ```
-
-### Testing
-
-```bash
-npm test                    # Run all tests
-npm run test:coverage      # Generate coverage report
-npm run test:watch         # Watch mode
+```
+src/
+├── index.ts          # 主入口
+├── search.ts         # 网络搜索
+├── url-reader.ts     # URL 读取
+├── research.ts       # Research 工具
+├── embedding.ts      # 混合检索（RRF）
+├── context7.ts       # Context7 集成
+├── cache.ts          # 缓存系统
+├── types.ts          # 类型定义
+├── logging.ts        # 日志模块
+├── error-handler.ts  # 错误处理
+├── resources.ts      # 资源定义
+├── http-server.ts    # HTTP 服务器
+└── proxy.ts          # 代理配置
 ```
 
-**Coverage:** 100% success rate with comprehensive unit tests covering error handling, types, proxy configs, resources, and logging.
+## 许可证
 
-## License
-
-This MCP server is licensed under the MIT License. This means you are free to use, modify, and distribute the software, subject to the terms and conditions of the MIT License. For more details, please see the LICENSE file in the project repository.
+MIT License

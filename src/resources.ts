@@ -4,20 +4,20 @@ import { packageVersion } from "./index.js";
 export function createConfigResource() {
   const config = {
     serverInfo: {
-      name: "ihor-sokoliuk/mcp-searxng",
+      name: "augmented-search",
       version: packageVersion,
-      description: "MCP server for SearXNG integration"
+      description: "增强型 MCP 搜索服务器"
     },
     environment: {
       searxngUrl: process.env.SEARXNG_URL || "(not configured)",
+      ollamaHost: process.env.OLLAMA_HOST || "http://localhost:11434",
       hasAuth: !!(process.env.AUTH_USERNAME && process.env.AUTH_PASSWORD),
       hasProxy: !!(process.env.HTTP_PROXY || process.env.HTTPS_PROXY || process.env.http_proxy || process.env.https_proxy),
-      hasNoProxy: !!(process.env.NO_PROXY || process.env.no_proxy),
       nodeVersion: process.version,
       currentLogLevel: getCurrentLogLevel()
     },
     capabilities: {
-      tools: ["searxng_web_search", "web_url_read"],
+      tools: ["search", "read", "code_resolve", "code_query"],
       logging: true,
       resources: true,
       transports: process.env.MCP_HTTP_PORT ? ["stdio", "http"] : ["stdio"]
@@ -28,72 +28,74 @@ export function createConfigResource() {
 }
 
 export function createHelpResource() {
-  return `# SearXNG MCP Server Help
+  return `# Augmented Search MCP Server 帮助
 
-## Overview
-This is a Model Context Protocol (MCP) server that provides web search capabilities through SearXNG and URL content reading functionality.
+## 概述
+增强型 MCP 搜索服务器，集成混合检索、代码文档搜索等功能。
 
-## Available Tools
+## 可用工具
 
-### 1. searxng_web_search
-Performs web searches using the configured SearXNG instance.
+### 1. search
+思考 + 并发搜索工具，支持混合检索和链接去重。
 
-**Parameters:**
-- \`query\` (required): The search query string
-- \`pageno\` (optional): Page number (default: 1)
-- \`time_range\` (optional): Filter by time - "day", "month", or "year"
-- \`language\` (optional): Language code like "en", "fr", "de" (default: "all")
-- \`safesearch\` (optional): Safe search level - 0 (none), 1 (moderate), 2 (strict)
+**必填参数：**
+- \`thought\`: 当前思考内容
+- \`thoughtNumber\`: 当前思考步骤编号
+- \`totalThoughts\`: 预计总思考步骤数
+- \`nextThoughtNeeded\`: 是否需要继续思考
 
-### 2. web_url_read
-Reads and converts web page content to Markdown format.
+**可选参数：**
+- \`searchedKeywords\`: 要搜索的关键词列表（最多3个并发）
+- \`site\`: 限制搜索域名
 
-**Parameters:**
-- \`url\` (required): The URL to fetch and convert
+### 2. read
+读取 URL 内容，支持 JS 渲染降级和正文提取。
 
-## Configuration
+**参数：**
+- \`url\`: URL 地址（支持单个或多个，多个用 \`|\` 分隔，如 \`https://a.com|https://b.com\`）
+- \`startChar\`: 起始字符位置
+- \`maxLength\`: 最大字符数
+- \`section\`: 提取指定章节
+- \`paragraphRange\`: 段落范围
+- \`readHeadings\`: 仅返回标题列表
 
-### Required Environment Variables
-- \`SEARXNG_URL\`: URL of your SearXNG instance (e.g., http://localhost:8080)
+### 3. code_resolve
+解析库名为 Context7 兼容的库 ID。
 
-### Optional Environment Variables
-- \`AUTH_USERNAME\` & \`AUTH_PASSWORD\`: Basic authentication for SearXNG
-- \`HTTP_PROXY\` / \`HTTPS_PROXY\`: Proxy server configuration
-- \`NO_PROXY\` / \`no_proxy\`: Comma-separated list of hosts to bypass proxy
-- \`MCP_HTTP_PORT\`: Enable HTTP transport on specified port
+**参数：**
+- \`query\`: 用户问题（用于相关性排序）
+- \`libraryName\`: 库名，如 react
 
-## Transport Modes
+### 4. code_query
+查询库的文档和代码示例。
 
-### STDIO (Default)
-Standard input/output transport for desktop clients like Claude Desktop.
+**参数：**
+- \`libraryId\`: 库 ID，如 /facebook/react
+- \`query\`: 用户问题
 
-### HTTP (Optional)
-RESTful HTTP transport for web applications. Set \`MCP_HTTP_PORT\` to enable.
+## 配置
 
-## Usage Examples
+### 必填环境变量
+- \`SEARXNG_URL\`: SearXNG 实例地址
 
-### Search for recent news
-\`\`\`
-Tool: searxng_web_search
-Args: {"query": "latest AI developments", "time_range": "day"}
-\`\`\`
+### 可选环境变量
+- \`OLLAMA_HOST\`: Ollama 地址（默认 http://localhost:11434）
+- \`EMBEDDING_MODEL\`: 嵌入模型（默认 nomic-embed-text）
+- \`MCP_HTTP_PORT\`: HTTP 模式端口
+- \`CONTEXT7_API_KEY\`: Context7 API Key（可选）
 
-### Read a specific article
-\`\`\`
-Tool: web_url_read  
-Args: {"url": "https://example.com/article"}
-\`\`\`
+## 传输模式
 
-## Troubleshooting
+### STDIO（默认）
+标准输入输出传输，适用于桌面客户端。
 
-1. **"SEARXNG_URL not set"**: Configure the SEARXNG_URL environment variable
-2. **Network errors**: Check if SearXNG is running and accessible
-3. **Empty results**: Try different search terms or check SearXNG instance
-4. **Timeout errors**: The server has a 10-second timeout for URL fetching
+### HTTP（可选）
+RESTful HTTP 传输，设置 \`MCP_HTTP_PORT\` 启用。
 
-Use logging level "debug" for detailed request information.
+## 使用日志
+设置日志级别 "debug" 获取详细请求信息。
 
-## Current Configuration
-See the "Current Configuration" resource for live settings.
+## 当前配置
+查看 "Current Configuration" 资源获取实时设置。
 `;
 }

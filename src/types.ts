@@ -9,81 +9,15 @@ export interface SearXNGWeb {
   }>;
 }
 
-export function isSearXNGWebSearchArgs(args: unknown): args is {
-  query: string;
-  pageno?: number;
-  time_range?: string;
-  language?: string;
-  safesearch?: number;
-} {
-  return (
-    typeof args === "object" &&
-    args !== null &&
-    "query" in args &&
-    typeof (args as { query: string }).query === "string"
-  );
-}
-
-export const WEB_SEARCH_TOOL: Tool = {
-  name: "searxng_web_search",
-  description:
-    "Performs a web search using the SearXNG API, ideal for general queries, news, articles, and online content. " +
-    "Use this for broad information gathering, recent events, or when you need diverse web sources.",
-  annotations: {
-    readOnlyHint: true,
-    openWorldHint: true,
-  },
-  inputSchema: {
-    type: "object",
-    properties: {
-      query: {
-        type: "string",
-        description:
-          "The search query. This is the main input for the web search",
-      },
-      pageno: {
-        type: "number",
-        description: "Search page number (starts at 1)",
-        default: 1,
-      },
-      time_range: {
-        type: "string",
-        description: "Time range of search (day, month, year)",
-        enum: ["day", "month", "year"],
-      },
-      language: {
-        type: "string",
-        description:
-          "Language code for search results (e.g., 'en', 'fr', 'de'). Default is instance-dependent.",
-        default: "all",
-      },
-      safesearch: {
-        type: "number",
-        description:
-          "Safe search filter level (0: None, 1: Moderate, 2: Strict)",
-        enum: [0, 1, 2],
-        default: 0,
-      },
-    },
-    required: ["query"],
-  },
-};
-
 export const READ_URL_TOOL: Tool = {
-  name: "web_url_read",
-  description:
-    "Read the content from an URL. " +
-    "Use this for further information retrieving to understand the content of each URL.",
-  annotations: {
-    readOnlyHint: true,
-    openWorldHint: true,
-  },
+  name: "read",
+  description: "读取 URL 的内容",
   inputSchema: {
     type: "object",
     properties: {
       url: {
         type: "string",
-        description: "URL",
+        description: "URL to read. Supports single URL or multiple URLs separated by '|' (e.g., 'https://a.com|https://b.com')",
       },
       startChar: {
         type: "number",
@@ -92,7 +26,7 @@ export const READ_URL_TOOL: Tool = {
       },
       maxLength: {
         type: "number",
-        description: "Maximum number of characters to return",
+        description: "Maximum number of characters to return per URL",
         minimum: 1,
       },
       section: {
@@ -107,7 +41,58 @@ export const READ_URL_TOOL: Tool = {
         type: "boolean",
         description: "Return only a list of headings instead of full content",
       },
+      timeoutMs: {
+        type: "number",
+        description: "Request timeout in milliseconds (default: 30000, from FETCH_TIMEOUT_MS env var)",
+        minimum: 1000,
+      },
     },
-    required: ["url"],
   },
 };
+
+export function isWebUrlReadArgs(args: unknown): args is {
+  url?: string;
+  startChar?: number;
+  maxLength?: number;
+  section?: string;
+  paragraphRange?: string;
+  readHeadings?: boolean;
+  timeoutMs?: number;
+} {
+  if (
+    typeof args !== "object" ||
+    args === null
+  ) {
+    return false;
+  }
+
+  const urlArgs = args as any;
+
+  if (!("url" in urlArgs) || typeof urlArgs.url !== "string" || urlArgs.url.trim() === "") {
+    return false;
+  }
+
+  if (urlArgs.section === "") urlArgs.section = undefined;
+  if (urlArgs.paragraphRange === "") urlArgs.paragraphRange = undefined;
+
+  if (urlArgs.startChar !== undefined && (typeof urlArgs.startChar !== "number" || urlArgs.startChar < 0)) {
+    return false;
+  }
+  if (urlArgs.maxLength !== undefined && (typeof urlArgs.maxLength !== "number" || urlArgs.maxLength < 1)) {
+    return false;
+  }
+  if (urlArgs.section !== undefined && typeof urlArgs.section !== "string") {
+    return false;
+  }
+  if (urlArgs.paragraphRange !== undefined && typeof urlArgs.paragraphRange !== "string") {
+    return false;
+  }
+  if (urlArgs.readHeadings !== undefined && typeof urlArgs.readHeadings !== "boolean") {
+    return false;
+  }
+  if (urlArgs.timeoutMs !== undefined && (typeof urlArgs.timeoutMs !== "number" || urlArgs.timeoutMs < 1000)) {
+    return false;
+  }
+
+  return true;
+}

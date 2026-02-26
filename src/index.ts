@@ -12,13 +12,22 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 
 // Import modularized functionality
-import { WEB_SEARCH_TOOL, READ_URL_TOOL, isSearXNGWebSearchArgs } from "./types.js";
+import { READ_URL_TOOL, isWebUrlReadArgs } from "./types.js";
 import { logMessage, setLogLevel } from "./logging.js";
-import { performWebSearch } from "./search.js";
 import { fetchAndConvertToMarkdown } from "./url-reader.js";
 import { createConfigResource, createHelpResource } from "./resources.js";
 import { createHttpServer } from "./http-server.js";
 import { validateEnvironment as validateEnv } from "./error-handler.js";
+import { SEARCH_TOOL, ResearchServer, ThoughtData } from "./research.js";
+import {
+  CODE_RESOLVE_TOOL,
+  CODE_QUERY_TOOL,
+  isCodeResolveArgs,
+  isCodeQueryArgs,
+  searchLibraries,
+  fetchLibraryContext,
+  formatSearchResults,
+} from "./context7.js";
 
 // Use a static version string that will be updated by the version script
 const packageVersion = "0.9.1";
@@ -29,54 +38,10 @@ export { packageVersion };
 // Global state for logging level
 let currentLogLevel: LoggingLevel = "info";
 
-// Type guard for URL reading args
-export function isWebUrlReadArgs(args: unknown): args is {
-  url: string;
-  startChar?: number;
-  maxLength?: number;
-  section?: string;
-  paragraphRange?: string;
-  readHeadings?: boolean;
-} {
-  if (
-    typeof args !== "object" ||
-    args === null ||
-    !("url" in args) ||
-    typeof (args as { url: string }).url !== "string"
-  ) {
-    return false;
-  }
-
-  const urlArgs = args as any;
-
-  // Convert empty strings to undefined for optional string parameters
-  if (urlArgs.section === "") urlArgs.section = undefined;
-  if (urlArgs.paragraphRange === "") urlArgs.paragraphRange = undefined;
-
-  // Validate optional parameters
-  if (urlArgs.startChar !== undefined && (typeof urlArgs.startChar !== "number" || urlArgs.startChar < 0)) {
-    return false;
-  }
-  if (urlArgs.maxLength !== undefined && (typeof urlArgs.maxLength !== "number" || urlArgs.maxLength < 1)) {
-    return false;
-  }
-  if (urlArgs.section !== undefined && typeof urlArgs.section !== "string") {
-    return false;
-  }
-  if (urlArgs.paragraphRange !== undefined && typeof urlArgs.paragraphRange !== "string") {
-    return false;
-  }
-  if (urlArgs.readHeadings !== undefined && typeof urlArgs.readHeadings !== "boolean") {
-    return false;
-  }
-
-  return true;
-}
-
 // Server implementation
 const server = new Server(
   {
-    name: "ihor-sokoliuk/mcp-searxng",
+    name: "augmented-search",
     version: packageVersion,
   },
   {
@@ -84,24 +49,36 @@ const server = new Server(
       logging: {},
       resources: {},
       tools: {
-        searxng_web_search: {
-          description: WEB_SEARCH_TOOL.description,
-          schema: WEB_SEARCH_TOOL.inputSchema,
+        search: {
+          description: SEARCH_TOOL.description,
+          schema: SEARCH_TOOL.inputSchema,
         },
-        web_url_read: {
+        read: {
           description: READ_URL_TOOL.description,
           schema: READ_URL_TOOL.inputSchema,
+        },
+        code_resolve: {
+          description: CODE_RESOLVE_TOOL.description,
+          schema: CODE_RESOLVE_TOOL.inputSchema,
+        },
+        code_query: {
+          description: CODE_QUERY_TOOL.description,
+          schema: CODE_QUERY_TOOL.inputSchema,
         },
       },
     },
   }
 );
 
+// Initialize research server
+const researchServer = new ResearchServer();
+researchServer.setServer(server);
+
 // List tools handler
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   logMessage(server, "debug", "Handling list_tools request");
   return {
-    tools: [WEB_SEARCH_TOOL, READ_URL_TOOL],
+    tools: [SEARCH_TOOL, READ_URL_TOOL, CODE_RESOLVE_TOOL, CODE_QUERY_TOOL],
   };
 });
 
@@ -111,19 +88,34 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   logMessage(server, "debug", `Handling call_tool request: ${name}`);
 
   try {
-    if (name === "searxng_web_search") {
-      if (!isSearXNGWebSearchArgs(args)) {
-        throw new Error("Invalid arguments for web search");
+    if (name === "read") {
+      if (!isWebUrlReadArgs(args)) {
+        logMessage(server, "error", `Read tool validation failed. Args: ${JSON.stringify(args)}`);
+        throw new Error(`Invalid arguments for URL reading. Received: ${JSON.stringify(args)}`);
       }
 
-      const result = await performWebSearch(
-        server,
-        args.query,
-        args.pageno,
-        args.time_range,
-        args.language,
-        args.safesearch
-      );
+      const paginationOptions = {
+        startChar: typeof args.startChar === 'number' ? args.startChar : 0,
+        maxLength: typeof args.maxLength === 'number' ? args.maxLength : undefined,
+        section: typeof args.section === 'string' ? args.section : undefined,
+        paragraphRange: typeof args.paragraphRange === 'string' ? args.paragraphRange : undefined,
+        readHeadings: args.readHeadings === true,
+      };
+
+      let result: string;
+
+      if (!args.url) {
+        throw new Error("'url' parameter is required");
+      }
+
+      const urls = args.url.includes('|') 
+        ? args.url.split('|').map(u => u.trim()).filter(u => u.length > 0)
+        : [args.url];
+
+      if (urls.length > 1) {
+        logMessage(server, "info", `Batch URL reading: ${urls.length} URLs`);
+      }
+      result = await fetchAndConvertToMarkdown(server, urls, args.timeoutMs, paginationOptions);
 
       return {
         content: [
@@ -133,26 +125,53 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           },
         ],
       };
-    } else if (name === "web_url_read") {
-      if (!isWebUrlReadArgs(args)) {
-        throw new Error("Invalid arguments for URL reading");
+    } else if (name === "search") {
+      const result = await researchServer.processThought(args as unknown as ThoughtData);
+
+      if (result.isError) {
+        throw new Error("Search tool execution failed");
       }
 
-      const paginationOptions = {
-        startChar: args.startChar,
-        maxLength: args.maxLength,
-        section: args.section,
-        paragraphRange: args.paragraphRange,
-        readHeadings: args.readHeadings,
-      };
+      return result;
+    } else if (name === "code_resolve") {
+      if (!isCodeResolveArgs(args)) {
+        throw new Error("Invalid arguments for code_resolve");
+      }
 
-      const result = await fetchAndConvertToMarkdown(server, args.url, 10000, paginationOptions);
+      const searchResponse = await searchLibraries(args.query, args.libraryName);
+
+      if (!searchResponse.results || searchResponse.results.length === 0) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: searchResponse.error || "No libraries found matching the provided name.",
+            },
+          ],
+        };
+      }
+
+      const resultsText = formatSearchResults(searchResponse);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Available Libraries:\n\n${resultsText}`,
+          },
+        ],
+      };
+    } else if (name === "code_query") {
+      if (!isCodeQueryArgs(args)) {
+        throw new Error("Invalid arguments for code_query");
+      }
+
+      const response = await fetchLibraryContext(args.libraryId, args.query);
 
       return {
         content: [
           {
             type: "text",
-            text: result,
+            text: response.data,
           },
         ],
       };
@@ -193,7 +212,7 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
         uri: "help://usage-guide",
         mimeType: "text/markdown",
         name: "Usage Guide",
-        description: "How to use the MCP SearXNG server effectively"
+        description: "How to use the Augmented Search server effectively"
       }
     ]
   };
@@ -274,7 +293,7 @@ async function main() {
     // Default STDIO transport
     // Show helpful message when running in terminal
     if (process.stdin.isTTY) {
-      console.error(`🔍 MCP SearXNG Server v${packageVersion} - Ready`);
+      console.error(`🔍 Augmented Search Server v${packageVersion} - Ready`);
       console.error("✅ Configuration valid");
       console.error(`🌐 SearXNG URL: ${process.env.SEARXNG_URL}`);
       console.error("📡 Waiting for MCP client connection via STDIO...\n");
@@ -284,7 +303,7 @@ async function main() {
     await server.connect(transport);
     
     // Log after connection is established
-    logMessage(server, "info", `MCP SearXNG Server v${packageVersion} connected via STDIO`);
+    logMessage(server, "info", `Augmented Search Server v${packageVersion} connected via STDIO`);
     logMessage(server, "info", `Log level: ${currentLogLevel}`);
     logMessage(server, "info", `Environment: ${process.env.NODE_ENV || 'development'}`);
     logMessage(server, "info", `SearXNG URL: ${process.env.SEARXNG_URL || 'not configured'}`);
@@ -307,4 +326,3 @@ main().catch((error) => {
   console.error("Failed to start server:", error);
   process.exit(1);
 });
-
