@@ -104,13 +104,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       let result: string;
 
-      if (!args.url) {
-        throw new Error("'url' parameter is required");
+      if (!args.urls || args.urls.length === 0) {
+        throw new Error("'urls' parameter is required with at least one URL");
       }
 
-      const urls = args.url.includes('|') 
-        ? args.url.split('|').map(u => u.trim()).filter(u => u.length > 0)
-        : [args.url];
+      const urls = args.urls;
 
       if (urls.length > 1) {
         logMessage(server, "info", `Batch URL reading: ${urls.length} URLs`);

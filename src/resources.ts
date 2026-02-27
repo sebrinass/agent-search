@@ -52,7 +52,7 @@ export function createHelpResource() {
 读取 URL 内容，支持 JS 渲染降级和正文提取。
 
 **参数：**
-- \`url\`: URL 地址（支持单个或多个，多个用 \`|\` 分隔，如 \`https://a.com|https://b.com\`）
+- \`urls\`: URL 数组（如 \`["https://a.com", "https://b.com"]\`），最少1个
 - \`startChar\`: 起始字符位置
 - \`maxLength\`: 最大字符数
 - \`section\`: 提取指定章节

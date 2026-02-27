@@ -15,9 +15,11 @@ export const READ_URL_TOOL: Tool = {
   inputSchema: {
     type: "object",
     properties: {
-      url: {
-        type: "string",
-        description: "URL to read. Supports single URL or multiple URLs separated by '|' (e.g., 'https://a.com|https://b.com')",
+      urls: {
+        type: "array",
+        items: { type: "string" },
+        description: "URLs to read. Array of URLs (e.g., ['https://a.com', 'https://b.com']). Minimum 1 URL required.",
+        minItems: 1,
       },
       startChar: {
         type: "number",
@@ -51,7 +53,7 @@ export const READ_URL_TOOL: Tool = {
 };
 
 export function isWebUrlReadArgs(args: unknown): args is {
-  url?: string;
+  urls?: string[];
   startChar?: number;
   maxLength?: number;
   section?: string;
@@ -68,8 +70,14 @@ export function isWebUrlReadArgs(args: unknown): args is {
 
   const urlArgs = args as any;
 
-  if (!("url" in urlArgs) || typeof urlArgs.url !== "string" || urlArgs.url.trim() === "") {
+  if (!("urls" in urlArgs) || !Array.isArray(urlArgs.urls) || urlArgs.urls.length === 0) {
     return false;
+  }
+
+  for (const url of urlArgs.urls) {
+    if (typeof url !== "string" || url.trim() === "") {
+      return false;
+    }
   }
 
   if (urlArgs.section === "") urlArgs.section = undefined;
