@@ -130,10 +130,6 @@
 
 ### Docker 方式
 
-```bash
-docker build -t augmented-search:latest .
-```
-
 ```json
 {
   "mcpServers": {
@@ -143,7 +139,7 @@ docker build -t augmented-search:latest .
         "run", "-i", "--rm",
         "-e", "SEARXNG_URL",
         "-e", "OLLAMA_HOST",
-        "augmented-search:latest"
+        "ghcr.io/sebrinass/mcp-augmented-search:latest"
       ],
       "env": {
         "SEARXNG_URL": "YOUR_SEARXNG_INSTANCE_URL",

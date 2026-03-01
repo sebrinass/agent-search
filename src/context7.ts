@@ -205,35 +205,7 @@ export function formatSearchResults(response: SearchResponse): string {
 
 export const CODE_RESOLVE_TOOL: Tool = {
   name: "code_resolve",
-  description: `将库名解析为 Context7 兼容的库 ID 并返回匹配的库列表。
-
-在调用 'code_query' 工具之前，必须先调用此函数获取有效的 Context7 兼容库 ID，除非用户在查询中明确提供了 '/org/project' 或 '/org/project/version' 格式的库 ID。
-
-每个结果包含：
-- 库 ID: Context7 兼容标识符（格式: /org/project）
-- 名称: 库或包名
-- 描述: 简短摘要
-- 代码片段数: 可用代码示例数量
-- 可信度: 权威性指标（高、中、低或未知）
-- 质量评分: 质量指标（100 为最高分）
-- 版本: 可用版本列表
-
-选择建议：
-1. 分析查询以理解用户需要什么库/包
-2. 根据以下因素返回最相关的匹配：
-   - 名称与查询的相似度（优先精确匹配）
-   - 描述与查询意图的相关性
-   - 文档覆盖率（优先代码片段数较多的库）
-   - 可信度（优先高或中等可信度的库）
-   - 质量评分（越高越好）
-
-响应格式：
-- 在明确标记的部分返回选定的库 ID
-- 简要说明选择该库的原因
-- 如果有多个好的匹配，承认这一点但继续使用最相关的那个
-- 如果没有好的匹配，明确说明并建议优化查询
-
-重要提示：每个问题最多调用此工具 3 次。如果 3 次调用后仍未找到所需内容，请使用已有的最佳结果。`,
+  description: `搜索编程库/框架，获取库 ID。用于查找代码文档、API 用法、代码示例。`,
   annotations: {
     readOnlyHint: true,
   },
@@ -256,11 +228,7 @@ export const CODE_RESOLVE_TOOL: Tool = {
 
 export const CODE_QUERY_TOOL: Tool = {
   name: "code_query",
-  description: `从 Context7 检索和查询任何编程库或框架的最新文档和代码示例。
-
-必须先调用 'code_resolve' 工具获取准确的 Context7 兼容库 ID，除非用户在查询中明确提供了 '/org/project' 或 '/org/project/version' 格式的库 ID。
-
-重要提示：每个问题最多调用此工具 3 次。如果 3 次调用后仍未找到所需内容，请使用已有的最佳信息。`,
+  description: `查询编程库的文档和代码示例。获取 API 用法、最佳实践、代码片段。`,
   annotations: {
     readOnlyHint: true,
   },
