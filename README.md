@@ -1,6 +1,6 @@
 # Augmented Search MCP Server
 
-基于 [SearXNG](https://docs.searxng.org) 的增强型 MCP 搜索服务器，集成混合检索、代码文档搜索等功能。
+基于 [ihor-sokoliuk/mcp-searxng](https://github.com/ihor-sokoliuk/mcp-searxng)修改的增强型 MCP 搜索服务器，集成混合检索、代码文档搜索等功能。
 
 ## 功能特性
 

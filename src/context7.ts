@@ -75,7 +75,7 @@ async function parseErrorResponse(response: Response, apiKey?: string): Promise<
 function generateHeaders(apiKey?: string): Record<string, string> {
   const headers: Record<string, string> = {
     "X-Context7-Source": "mcp-search",
-    "X-Context7-Server-Version": "0.9.1",
+    "X-Context7-Server-Version": "1.0.0",
   };
 
   if (apiKey) {
