@@ -1,6 +1,8 @@
 # Augmented Search MCP Server
 
-基于 [ihor-sokoliuk/mcp-searxng](https://github.com/ihor-sokoliuk/mcp-searxng)修改的增强型 MCP 搜索服务器，集成混合检索、代码文档搜索等功能。
+[![MCP Badge](https://lobehub.com/badge/mcp/sebrinass-mcp-augmented-search)](https://lobehub.com/mcp/sebrinass-mcp-augmented-search)
+
+基于 [ihor-sokoliuk/mcp-searxng](https://github.com/ihor-sokoliuk/mcp-searxng)v0.9.1修改的MCP 搜索服务器，集成混合检索、代码文档搜索等功能。
 
 ## 功能特性
 
