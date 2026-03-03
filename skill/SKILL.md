@@ -153,7 +153,7 @@ curl -X POST http://localhost:3000/api/read \
 
 ## 详细安装
 
-完整安装指南请参阅 [installation.md](reference/installation.md)，包含：
+完整安装指南请参阅 [GitHub 安装文档](https://github.com/sebrinass/mcp-augmented-search/blob/main/skill/reference/installation.md)，包含：
 - Docker 完整安装
 - npm + 已有 SearXNG
 - SearXNG 配置详解
@@ -162,7 +162,7 @@ curl -X POST http://localhost:3000/api/read \
 
 ## 资源链接
 
-- [安装指南](reference/installation.md) — 完整安装说明
+- [安装指南](https://github.com/sebrinass/mcp-augmented-search/blob/main/skill/reference/installation.md) — 完整安装说明
 - [配置参考](https://github.com/sebrinass/mcp-augmented-search/blob/main/docs/configuration.md) — 完整环境变量说明
 - [GitHub 仓库](https://github.com/sebrinass/mcp-augmented-search)
 - [SearXNG 文档](https://docs.searxng.org)
