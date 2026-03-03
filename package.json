@@ -1,6 +1,6 @@
 {
   "name": "augmented-search",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "增强型 MCP 搜索服务器，集成混合检索、代码文档搜索等功能",
   "license": "MIT",
   "author": "Based on mcp-searxng by Ihor Sokoliuk",

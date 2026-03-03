@@ -5,32 +5,35 @@ import { LoggingLevel } from "@modelcontextprotocol/sdk/types.js";
 let currentLogLevel: LoggingLevel = "info";
 
 // Logging helper function
-export function logMessage(server: Server, level: LoggingLevel, message: string, data?: unknown): void {
-  if (shouldLog(level)) {
-    try {
-      // Merge message and data together for the notification body
-      const notificationData = data !== undefined
-        ? (typeof data === 'object' && data !== null ? { message, ...data } : { message, data })
-        : { message };
+export function logMessage(server: Server | null, level: LoggingLevel, message: string, data?: unknown): void {
+  if (!shouldLog(level)) {
+    return;
+  }
 
-      server.notification({
-        method: "notifications/message",
-        params: {
-          level,
-          data: notificationData
-        }
-      }).catch((error) => {
-        // Silently ignore "Not connected" errors during server startup
-        // This can happen when logging occurs before the transport is fully connected
-        if (error instanceof Error && error.message !== "Not connected") {
-          console.error("Logging error:", error);
-        }
-      });
-    } catch (error) {
-      // Handle synchronous errors as well
+  const notificationData = data !== undefined
+    ? (typeof data === 'object' && data !== null ? { message, ...data } : { message, data })
+    : { message };
+
+  if (!server) {
+    console.log(`[${level.toUpperCase()}] ${message}`, data !== undefined ? data : '');
+    return;
+  }
+
+  try {
+    server.notification({
+      method: "notifications/message",
+      params: {
+        level,
+        data: notificationData
+      }
+    }).catch((error) => {
       if (error instanceof Error && error.message !== "Not connected") {
         console.error("Logging error:", error);
       }
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message !== "Not connected") {
+      console.error("Logging error:", error);
     }
   }
 }

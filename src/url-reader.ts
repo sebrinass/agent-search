@@ -42,7 +42,7 @@ async function getHappyDom() {
     try {
       happyDomModule = await import('happy-dom');
     } catch (e) {
-      logMessage(null as any, 'warning', 'Happy DOM not installed. JS rendering disabled.');
+      logMessage(null, 'warning', 'Happy DOM not installed. JS rendering disabled.');
       return null;
     }
   }
@@ -54,7 +54,7 @@ async function getReadability() {
     try {
       readabilityModule = await import('@mozilla/readability');
     } catch (e) {
-      logMessage(null as any, 'warning', '@mozilla/readability not installed. Content extraction disabled.');
+      logMessage(null, 'warning', '@mozilla/readability not installed. Content extraction disabled.');
       return null;
     }
   }
@@ -203,7 +203,7 @@ async function extractWithReadability(htmlContent: string, url: string): Promise
     }
     return null;
   } catch (error: any) {
-    logMessage(null as any, 'warning', `Readability extraction failed: ${error.message}`);
+    logMessage(null, 'warning', `Readability extraction failed: ${error.message}`);
     return null;
   }
 }
@@ -217,7 +217,7 @@ function installHappyDomErrorHandler() {
 
   process.on('uncaughtException', (error: Error) => {
     if (error.name === 'DOMException' || error.message?.includes('navigationStart')) {
-      logMessage(null as any, 'warning', `Happy DOM caught exception: ${error.message}`);
+      logMessage(null, 'warning', `Happy DOM caught exception: ${error.message}`);
       return;
     }
     throw error;
@@ -225,7 +225,7 @@ function installHappyDomErrorHandler() {
 
   process.on('unhandledRejection', (reason: unknown) => {
     if (reason instanceof Error && (reason.name === 'DOMException' || reason.message?.includes('navigationStart'))) {
-      logMessage(null as any, 'warning', `Happy DOM caught rejection: ${reason.message}`);
+      logMessage(null, 'warning', `Happy DOM caught rejection: ${reason.message}`);
       return;
     }
     if (reason instanceof Error) {
@@ -267,6 +267,11 @@ async function fetchWithHappyDom(
     });
 
     const page = browser.newPage();
+    
+    const window = page.mainFrame.window as any;
+    window.alert = () => {};
+    window.confirm = () => false;
+    window.prompt = () => null;
 
     const timeoutPromise = new Promise<null>((_, reject) => {
       setTimeout(() => reject(new Error('Happy DOM timeout')), timeoutMs);
@@ -294,7 +299,7 @@ async function fetchWithHappyDom(
       source: 'happy-dom'
     };
   } catch (error: any) {
-    logMessage(null as any, 'warning', `Happy DOM render failed: ${error.message}`);
+    logMessage(null, 'warning', `Happy DOM render failed: ${error.message}`);
     return null;
   } finally {
     if (browser) {
