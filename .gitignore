@@ -1,6 +1,7 @@
 # Build outputs
 dist
 build
+*.tsbuildinfo
 
 # Test outputs
 coverage
@@ -14,6 +15,7 @@ node_modules
 .env.development.local
 .env.test.local
 .env.production.local
+.token
 
 # Logs
 npm-debug.log*

@@ -1,9 +1,17 @@
 {
   "name": "augmented-search",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "增强型 MCP 搜索服务器，集成混合检索、代码文档搜索等功能",
   "license": "MIT",
   "author": "Based on mcp-searxng by Ihor Sokoliuk",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sebrinass/mcp-augmented-search.git"
+  },
+  "homepage": "https://github.com/sebrinass/mcp-augmented-search#readme",
+  "bugs": {
+    "url": "https://github.com/sebrinass/mcp-augmented-search/issues"
+  },
   "keywords": [
     "mcp",
     "modelcontextprotocol",
