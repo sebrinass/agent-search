@@ -90,7 +90,7 @@ SEARXNG_URL=http://localhost:8080 augmented-search
 | `MCP_HTTP_PORT` | - | HTTP 模式端口 |
 | `SEARCH_TIMEOUT_MS` | 30000 | 搜索超时（毫秒） |
 
-完整配置请参阅 [configuration.md](../docs/configuration.md)。
+完整配置请参阅 [GitHub 仓库配置文档](https://github.com/sebrinass/mcp-augmented-search/blob/main/docs/configuration.md)。
 
 ## 性能建议
 
@@ -163,7 +163,7 @@ curl -X POST http://localhost:3000/api/read \
 ## 资源链接
 
 - [安装指南](reference/installation.md) — 完整安装说明
-- [配置参考](../docs/configuration.md) — 完整环境变量说明
+- [配置参考](https://github.com/sebrinass/mcp-augmented-search/blob/main/docs/configuration.md) — 完整环境变量说明
 - [GitHub 仓库](https://github.com/sebrinass/mcp-augmented-search)
 - [SearXNG 文档](https://docs.searxng.org)
 - [Docker 镜像](https://ghcr.io/sebrinass/mcp-augmented-search)
