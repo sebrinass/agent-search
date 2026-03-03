@@ -12,37 +12,38 @@ import {
   type ErrorContext
 } from "./error-handler.js";
 
-export async function performWebSearch(
+const EMBEDDING_API_KEY = process.env.EMBEDDING_API_KEY || '';
+const EMBEDDING_BASE_URL = process.env.EMBEDDING_BASE_URL || process.env.OLLAMA_HOST || '';
+const isEmbeddingEnabled = !!(EMBEDDING_API_KEY || EMBEDDING_BASE_URL);
+const DEFAULT_SEARCH_PAGES = isEmbeddingEnabled ? 3 : 1;
+const SEARCH_PAGES = parseInt(process.env.SEARCH_PAGES || String(DEFAULT_SEARCH_PAGES), 10);
+const SEARCH_ENGINES = process.env.SEARCH_ENGINES || '';
+
+function getEnginesParam(): string | null {
+  const engines = SEARCH_ENGINES.trim().toLowerCase();
+  if (!engines || engines === 'all') {
+    return null;
+  }
+  return engines;
+}
+
+async function fetchSinglePage(
   server: Server,
   query: string,
-  pageno: number = 1,
+  pageno: number,
   time_range?: string,
   language: string = "all",
   safesearch?: number,
   site?: string
-) {
-  const startTime = Date.now();
-  
-  // Build detailed log message with all parameters
-  const searchParams = [
-    `page ${pageno}`,
-    `lang: ${language}`,
-    time_range ? `time: ${time_range}` : null,
-    safesearch ? `safesearch: ${safesearch}` : null
-  ].filter(Boolean).join(", ");
-  
-  logMessage(server, "info", `Starting web search: "${query}" (${searchParams})`);
-  
+): Promise<Array<{ title: string; content: string; url: string; score: number }>> {
   const searxngUrl = process.env.SEARXNG_URL;
 
   if (!searxngUrl) {
-    logMessage(server, "error", "SEARXNG_URL not configured");
     throw createConfigurationError(
       "SEARXNG_URL not set. Set it to your SearXNG instance (e.g., http://localhost:8080 or https://search.example.com)"
     );
   }
 
-  // Validate that searxngUrl is a valid URL
   let parsedUrl: URL;
   try {
     parsedUrl = new URL(searxngUrl.endsWith('/') ? searxngUrl : searxngUrl + '/');
@@ -54,16 +55,19 @@ export async function performWebSearch(
 
   const url = new URL('search', parsedUrl);
 
-  // Handle site parameter: convert to "site:domain.com query" format
   let searchQuery = query;
   if (site) {
     searchQuery = `site:${site} ${query}`;
-    logMessage(server, "info", `Using site-restricted search: ${site}`);
   }
 
   url.searchParams.set("q", searchQuery);
   url.searchParams.set("format", "json");
   url.searchParams.set("pageno", pageno.toString());
+  
+  const enginesParam = getEnginesParam();
+  if (enginesParam) {
+    url.searchParams.set("engines", enginesParam);
+  }
 
   if (
     time_range !== undefined &&
@@ -80,19 +84,15 @@ export async function performWebSearch(
     url.searchParams.set("safesearch", safesearch.toString());
   }
 
-  // Prepare request options with headers
   const requestOptions: RequestInit = {
     method: "GET"
   };
 
-  // Add proxy dispatcher if proxy is configured
-  // Node.js fetch uses 'dispatcher' option for proxy, not 'agent'
   const proxyAgent = createProxyAgent(url.toString());
   if (proxyAgent) {
-    (requestOptions as any).dispatcher = proxyAgent;
+    requestOptions.dispatcher = proxyAgent;
   }
 
-  // Add basic authentication if credentials are provided
   const username = process.env.AUTH_USERNAME;
   const password = process.env.AUTH_PASSWORD;
 
@@ -104,7 +104,6 @@ export async function performWebSearch(
     };
   }
 
-  // Add User-Agent header if configured
   const userAgent = process.env.USER_AGENT;
   if (userAgent) {
     requestOptions.headers = {
@@ -113,13 +112,10 @@ export async function performWebSearch(
     };
   }
 
-  // Fetch with enhanced error handling
   let response: Response;
   try {
-    logMessage(server, "info", `Making request to: ${url.toString()}`);
     response = await fetch(url.toString(), requestOptions);
   } catch (error: any) {
-    logMessage(server, "error", `Network error during search request: ${error.message}`, { query, url: url.toString() });
     const context: ErrorContext = {
       url: url.toString(),
       searxngUrl,
@@ -144,7 +140,6 @@ export async function performWebSearch(
     throw createServerError(response.status, response.statusText, responseBody, context);
   }
 
-  // Parse JSON response
   let data: SearXNGWeb;
   try {
     data = (await response.json()) as SearXNGWeb;
@@ -161,26 +156,97 @@ export async function performWebSearch(
   }
 
   if (!data.results) {
-    const context: ErrorContext = { url: url.toString(), query };
-    throw createDataError(data, context);
+    return [];
   }
 
-  const results = data.results.map((result) => ({
+  return data.results.map((result) => ({
     title: result.title || "",
     content: result.content || "",
     url: result.url || "",
     score: result.score || 0,
   }));
+}
 
-  if (results.length === 0) {
+export async function performWebSearch(
+  server: Server,
+  query: string,
+  pageno: number = 1,
+  time_range?: string,
+  language: string = "all",
+  safesearch?: number,
+  site?: string
+) {
+  const startTime = Date.now();
+  
+  const searchParams = [
+    `pages: ${SEARCH_PAGES}`,
+    `lang: ${language}`,
+    time_range ? `time: ${time_range}` : null,
+    safesearch ? `safesearch: ${safesearch}` : null
+  ].filter(Boolean).join(", ");
+  
+  logMessage(server, "info", `Starting web search: "${query}" (${searchParams})`);
+
+  const pagePromises: Promise<Array<{ title: string; content: string; url: string; score: number }>>[] = [];
+  
+  for (let page = 1; page <= SEARCH_PAGES; page++) {
+    pagePromises.push(fetchSinglePage(server, query, page, time_range, language, safesearch, site));
+  }
+
+  const pageResults = await Promise.all(pagePromises);
+  
+  const seenUrls = new Set<string>();
+  const allResults: Array<{ title: string; content: string; url: string; score: number }> = [];
+  
+  for (const results of pageResults) {
+    for (const result of results) {
+      if (!seenUrls.has(result.url)) {
+        seenUrls.add(result.url);
+        allResults.push(result);
+      }
+    }
+  }
+
+  if (allResults.length === 0) {
     logMessage(server, "info", `No results found for query: "${query}"`);
     return createNoResultsMessage(query);
   }
 
   const duration = Date.now() - startTime;
-  logMessage(server, "info", `Search completed: "${query}" (${searchParams}) - ${results.length} results in ${duration}ms`);
+  logMessage(server, "info", `Search completed: "${query}" (${searchParams}) - ${allResults.length} results in ${duration}ms`);
 
-  return results
+  return allResults
     .map((r) => `Title: ${r.title}\nDescription: ${r.content}\nURL: ${r.url}\nRelevance Score: ${r.score.toFixed(3)}`)
     .join("\n\n");
+}
+
+export async function performWebSearchRaw(
+  server: Server,
+  query: string,
+  time_range?: string,
+  language: string = "all",
+  safesearch?: number,
+  site?: string
+): Promise<Array<{ title: string; content: string; url: string; score: number }>> {
+  const pagePromises: Promise<Array<{ title: string; content: string; url: string; score: number }>>[] = [];
+  
+  for (let page = 1; page <= SEARCH_PAGES; page++) {
+    pagePromises.push(fetchSinglePage(server, query, page, time_range, language, safesearch, site));
+  }
+
+  const pageResults = await Promise.all(pagePromises);
+  
+  const seenUrls = new Set<string>();
+  const allResults: Array<{ title: string; content: string; url: string; score: number }> = [];
+  
+  for (const results of pageResults) {
+    for (const result of results) {
+      if (!seenUrls.has(result.url)) {
+        seenUrls.add(result.url);
+        allResults.push(result);
+      }
+    }
+  }
+
+  return allResults;
 }

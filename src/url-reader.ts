@@ -210,17 +210,23 @@ async function extractWithReadability(htmlContent: string, url: string): Promise
 
 // ============ Happy DOM 渲染 ============
 let happyDomErrorHandlerInstalled = false;
+let isProcessingException = false;
 
 function installHappyDomErrorHandler() {
   if (happyDomErrorHandlerInstalled) return;
   happyDomErrorHandlerInstalled = true;
 
   process.on('uncaughtException', (error: Error) => {
+    if (isProcessingException) return;
+    
     if (error.name === 'DOMException' || error.message?.includes('navigationStart')) {
       logMessage(null, 'warning', `Happy DOM caught exception: ${error.message}`);
       return;
     }
-    throw error;
+    
+    isProcessingException = true;
+    console.error('Uncaught Exception:', error);
+    process.exit(1);
   });
 
   process.on('unhandledRejection', (reason: unknown) => {
@@ -228,9 +234,7 @@ function installHappyDomErrorHandler() {
       logMessage(null, 'warning', `Happy DOM caught rejection: ${reason.message}`);
       return;
     }
-    if (reason instanceof Error) {
-      throw reason;
-    }
+    console.error('Unhandled Rejection:', reason);
   });
 }
 
@@ -331,7 +335,7 @@ async function fetchHtmlContent(
     // Add proxy dispatcher if proxy is configured
     const proxyAgent = createProxyAgent(url);
     if (proxyAgent) {
-      (requestOptions as any).dispatcher = proxyAgent;
+      requestOptions.dispatcher = proxyAgent;
     }
 
     let response: Response;

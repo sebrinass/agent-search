@@ -7,7 +7,25 @@
  */
 
 import { strict as assert } from 'node:assert';
-import { SimpleCache, urlCache } from '../../src/cache.js';
+import { 
+  clearUrlCache,
+  setUrlCache,
+  getUrlCache,
+  hasUrlCache,
+  deleteUrlCache,
+  clearEmbeddingCache,
+  setEmbeddingCache,
+  getEmbeddingCache,
+  hasEmbeddingCache,
+  clearLinkDedup,
+  addLinkToDedup,
+  addLinksToDedup,
+  isLinkDuplicate,
+  getUrlCacheStats,
+  getEmbeddingCacheStats,
+  getLinkDedupStats,
+  clearAllCaches
+} from '../../src/cache.js';
 import { testFunction, createTestResults, printTestSummary } from '../helpers/test-utils.js';
 
 const results = createTestResults();
@@ -15,103 +33,107 @@ const results = createTestResults();
 async function runTests() {
   console.log('🧪 Testing: cache.ts\n');
 
-  await testFunction('Basic cache operations - set and get', () => {
-    const testCache = new SimpleCache(1000); // 1 second TTL
+  await testFunction('URL cache - set and get', () => {
+    clearUrlCache();
 
-    // Test set and get
-    testCache.set('test-url', '<html>test</html>', '# Test');
-    const entry = testCache.get('test-url');
+    setUrlCache('https://test.com', '<html>test</html>', '# Test');
+    const entry = getUrlCache('https://test.com');
+    
     assert.ok(entry);
     assert.equal(entry.htmlContent, '<html>test</html>');
     assert.equal(entry.markdownContent, '# Test');
 
-    testCache.destroy();
+    clearUrlCache();
   }, results);
 
-  await testFunction('Cache returns null for non-existent keys', () => {
-    const testCache = new SimpleCache(1000);
+  await testFunction('URL cache - returns null for non-existent keys', () => {
+    clearUrlCache();
+    assert.equal(getUrlCache('https://non-existent.com'), null);
+  }, results);
+
+  await testFunction('URL cache - has and delete', () => {
+    clearUrlCache();
+
+    assert.equal(hasUrlCache('https://test.com'), false);
+    setUrlCache('https://test.com', '<html>test</html>', '# Test');
+    assert.equal(hasUrlCache('https://test.com'), true);
     
-    assert.equal(testCache.get('non-existent'), null);
-
-    testCache.destroy();
+    assert.equal(deleteUrlCache('https://test.com'), true);
+    assert.equal(hasUrlCache('https://test.com'), false);
+    assert.equal(deleteUrlCache('https://test.com'), false);
   }, results);
 
-  await testFunction('Cache TTL expiration', async () => {
-    const testCache = new SimpleCache(50); // 50ms TTL
+  await testFunction('URL cache - statistics', () => {
+    clearUrlCache();
 
-    testCache.set('short-lived', '<html>test</html>', '# Test');
+    setUrlCache('https://url1.com', '<html>1</html>', '# 1');
+    setUrlCache('https://url2.com', '<html>2</html>', '# 2');
 
-    // Should exist immediately
-    assert.ok(testCache.get('short-lived'));
-
-    // Wait for expiration
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    // Should be expired
-    assert.equal(testCache.get('short-lived'), null);
-
-    testCache.destroy();
-  }, results);
-
-  await testFunction('Cache clear functionality', () => {
-    const testCache = new SimpleCache(1000);
-
-    testCache.set('url1', '<html>1</html>', '# 1');
-    testCache.set('url2', '<html>2</html>', '# 2');
-
-    assert.ok(testCache.get('url1'));
-    assert.ok(testCache.get('url2'));
-
-    testCache.clear();
-
-    assert.equal(testCache.get('url1'), null);
-    assert.equal(testCache.get('url2'), null);
-
-    testCache.destroy();
-  }, results);
-
-  await testFunction('Cache statistics', () => {
-    const testCache = new SimpleCache(1000);
-
-    testCache.set('url1', '<html>1</html>', '# 1');
-    testCache.set('url2', '<html>2</html>', '# 2');
-
-    const stats = testCache.getStats();
+    const stats = getUrlCacheStats();
     assert.equal(stats.size, 2);
     assert.equal(stats.entries.length, 2);
-
-    // Check that entries have age information
-    assert.ok(stats.entries[0].age >= 0);
-    assert.ok(stats.entries[0].url);
-
-    testCache.destroy();
   }, results);
 
-  await testFunction('Global cache instance', () => {
-    // Test that global cache exists and works
-    urlCache.clear(); // Start fresh
+  await testFunction('Link dedup - add and check', () => {
+    clearLinkDedup();
 
-    urlCache.set('global-test', '<html>global</html>', '# Global');
-    const entry = urlCache.get('global-test');
+    assert.equal(isLinkDuplicate('https://test.com'), false);
+    addLinkToDedup('https://test.com');
+    assert.equal(isLinkDuplicate('https://test.com'), true);
+    assert.equal(isLinkDuplicate('https://other.com'), false);
 
-    assert.ok(entry);
-    assert.equal(entry.markdownContent, '# Global');
-
-    urlCache.clear();
+    clearLinkDedup();
   }, results);
 
-  await testFunction('Cache cleanup interval', async () => {
-    const testCache = new SimpleCache(50); // 50ms TTL
+  await testFunction('Link dedup - batch add', () => {
+    clearLinkDedup();
 
-    testCache.set('cleanup-test', '<html>test</html>', '# Test');
+    addLinksToDedup(['https://a.com', 'https://b.com', 'https://c.com']);
+    
+    assert.equal(isLinkDuplicate('https://a.com'), true);
+    assert.equal(isLinkDuplicate('https://b.com'), true);
+    assert.equal(isLinkDuplicate('https://c.com'), true);
+    assert.equal(isLinkDuplicate('https://d.com'), false);
 
-    // Wait for cleanup to run
-    await new Promise(resolve => setTimeout(resolve, 150));
+    const stats = getLinkDedupStats();
+    assert.equal(stats.size, 3);
 
-    // Entry should be cleaned up
-    assert.equal(testCache.get('cleanup-test'), null);
+    clearLinkDedup();
+  }, results);
 
-    testCache.destroy();
+  await testFunction('Embedding cache - set and get', () => {
+    clearEmbeddingCache();
+
+    const testEmbedding = new Float32Array([0.1, 0.2, 0.3]);
+    setEmbeddingCache('test text', testEmbedding);
+    
+    const cached = getEmbeddingCache('test text');
+    assert.ok(cached);
+    assert.deepEqual(cached, testEmbedding);
+
+    clearEmbeddingCache();
+  }, results);
+
+  await testFunction('Embedding cache - has and check', () => {
+    clearEmbeddingCache();
+
+    assert.equal(hasEmbeddingCache('test'), false);
+    setEmbeddingCache('test', new Float32Array([1, 2, 3]));
+    assert.equal(hasEmbeddingCache('test'), true);
+
+    clearEmbeddingCache();
+  }, results);
+
+  await testFunction('Clear all caches', () => {
+    setUrlCache('https://test.com', '<html>test</html>', '# Test');
+    addLinkToDedup('https://link.com');
+    setEmbeddingCache('test', new Float32Array([1, 2, 3]));
+
+    clearAllCaches();
+
+    assert.equal(hasUrlCache('https://test.com'), false);
+    assert.equal(isLinkDuplicate('https://link.com'), false);
+    assert.equal(hasEmbeddingCache('test'), false);
   }, results);
 
   printTestSummary(results, 'Cache Module');

@@ -45,15 +45,15 @@
 | readHeadings | boolean | 否 | 仅返回标题列表 |
 | timeoutMs | number | 否 | 超时时间（毫秒），默认 30000 |
 
-### code_resolve
-解析库名为 Context7 兼容的库 ID。
+### library_search
+搜索编程库，获取 Context7 兼容的库 ID。
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | query | string | 是 | 用户问题（用于相关性排序） |
 | libraryName | string | 是 | 库名，如 react |
 
-### code_query
+### library_docs
 查询库的文档和代码示例。
 
 | 参数 | 类型 | 必填 | 说明 |
@@ -72,13 +72,69 @@
 ### 可选配置
 
 #### 混合检索
+
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `ENABLE_EMBEDDING` | true | 启用混合检索 |
-| `OLLAMA_HOST` | http://localhost:11434 | Ollama 地址 |
-| `EMBEDDING_MODEL` | nomic-embed-text | 嵌入模型 |
-| `TOP_K` | 3 | 返回结果数量 |
-| `SEARCH_TIMEOUT_MS` | 30000 | 搜索超时时间（毫秒） |
+| `EMBEDDING_API_KEY` | - | OpenAI 兼容 API 密钥 |
+| `EMBEDDING_BASE_URL` | `OLLAMA_HOST` | API 端点地址 |
+| `EMBEDDING_MODEL` | nomic-embed-text | 嵌入模型名称 |
+| `TOP_K` | 5 | 返回结果数量 |
+| `EMBEDDING_CACHE_SIZE` | 500 | 嵌入缓存最大条数 |
+
+**支持的 Embedding 服务**：
+
+| 服务 | `EMBEDDING_BASE_URL` | `EMBEDDING_MODEL` 示例 |
+|------|---------------------|------------------------|
+| **Ollama** | `http://localhost:11434` | `nomic-embed-text`, `mxbai-embed-large` |
+| **OpenAI** | `https://api.openai.com/v1` | `text-embedding-3-small`, `text-embedding-3-large` |
+| **Jina** | `https://api.jina.ai/v1` | `jina-embeddings-v2-base-en` |
+| **其他** | 自定义 | 任何 OpenAI 兼容模型 |
+
+**注意**：`OLLAMA_HOST` 仍被支持，会自动作为 `EMBEDDING_BASE_URL` 的默认值。
+
+#### 搜索控制
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `SEARCH_PAGES` | 智能默认 | 搜索页数（见下方经验建议） |
+| `SEARCH_ENGINES` | all | 指定搜索引擎，逗号分隔 |
+| `SEARCH_TIMEOUT_MS` | 30000 | MCP 搜索超时（毫秒） |
+
+## 经验建议
+
+### SEARCH_PAGES 智能默认值
+
+| 模式 | 默认值 | 说明 |
+|------|--------|------|
+| 纯文本检索（无 Embedding 配置） | 1 | 快速响应，基础相关性 |
+| 混合检索（有 Embedding 配置） | 3 | 更多结果供 embedding 重排序 |
+
+**启用混合检索条件**：设置 `EMBEDDING_API_KEY` 或 `EMBEDDING_BASE_URL` 或 `OLLAMA_HOST`
+
+可手动覆盖：`SEARCH_PAGES=2` 或 `SEARCH_PAGES=5`
+
+### MCP 超时配置建议
+
+| 模式 | 建议超时 | 计算方式 |
+|------|----------|----------|
+| 纯文本检索 | 10-15秒 | SearXNG 全局超时 + 5-10秒 |
+| 混合检索 | 30-60秒 | 视页数和机器配置调整 |
+
+**SearXNG 全局超时**：在 `settings.yml` 中配置 `max_request_timeout: 5.0`
+
+### 预期效果
+
+| 配置 | 相关率 | 响应时间 |
+|------|--------|----------|
+| 1页 + 纯文本 | ~50% | 快（5-10秒） |
+| 3页 + Embedding | ~80% | 中（15-30秒） |
+| 5页 + Embedding | ~80% | 慢（30-60秒），可能超时 |
+
+### 其他建议
+
+1. **搜索词并发**：建议不超过 3 个关键词并发搜索
+2. **模型预热**：Embedding 模型首次请求较慢，建议提前预热
+3. **视频过滤**：建议在 SearXNG 配置中过滤视频网站以提升结果质量
 
 #### URL 读取
 | 变量 | 默认值 | 说明 |
@@ -109,6 +165,7 @@
 | `HTTP_PROXY` | - | HTTP 代理地址 |
 | `HTTPS_PROXY` | - | HTTPS 代理地址 |
 | `MCP_HTTP_PORT` | - | HTTP 模式端口 |
+| `ALLOWED_ORIGINS` | localhost:3000 | CORS 白名单，逗号分隔 |
 
 ## 安装配置
 
@@ -122,7 +179,8 @@
       "args": ["-y", "augmented-search"],
       "env": {
         "SEARXNG_URL": "YOUR_SEARXNG_INSTANCE_URL",
-        "OLLAMA_HOST": "http://localhost:11434",
+        "EMBEDDING_API_KEY": "YOUR_API_KEY",
+        "EMBEDDING_BASE_URL": "http://localhost:11434",
         "CONTEXT7_API_KEY": "YOUR_API_KEY"
       }
     }
@@ -145,7 +203,7 @@
       ],
       "env": {
         "SEARXNG_URL": "YOUR_SEARXNG_INSTANCE_URL",
-        "OLLAMA_HOST": "http://host.docker.internal:11434"
+        "EMBEDDING_BASE_URL": "http://host.docker.internal:11434"
       }
     }
   }
@@ -173,6 +231,152 @@
 **HTTP 端点**：
 - MCP 协议：`POST/GET/DELETE /mcp`
 - 健康检查：`GET /health`
+- REST API：`/api/*`
+
+## REST API
+
+启用 HTTP 模式后，可通过 REST API 直接调用所有功能，无需 MCP 客户端。
+
+### API 端点列表
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api` | GET | API 信息 |
+| `/api/search` | POST | 思考+搜索融合（对应 MCP search 工具） |
+| `/api/read` | POST | URL 内容读取（对应 MCP read 工具） |
+| `/api/library/search` | POST | 编程库搜索（对应 MCP library_search 工具） |
+| `/api/library/docs` | POST | 库文档查询（对应 MCP library_docs 工具） |
+
+### POST /api/search
+
+思考 + 搜索融合，与 MCP search 工具完全一致。
+
+**请求体**：
+```json
+{
+  "thought": "当前思考内容",
+  "thoughtNumber": 1,
+  "totalThoughts": 3,
+  "nextThoughtNeeded": true,
+  "searchedKeywords": ["React hooks", "React 教程"],
+  "site": "react.dev",
+  "time_range": "month"
+}
+```
+
+**响应**：
+```json
+{
+  "success": true,
+  "duration": "3000ms",
+  "thoughtStatus": {
+    "thoughtNumber": 1,
+    "totalThoughts": 3,
+    "nextThoughtNeeded": true,
+    "thoughtHistoryLength": 1,
+    "branches": []
+  },
+  "searchResults": [
+    {
+      "keyword": "React hooks",
+      "cached": false,
+      "resultCount": 10,
+      "results": [
+        {
+          "title": "标题",
+          "url": "https://...",
+          "description": "描述",
+          "relevance": 0.95
+        }
+      ]
+    }
+  ]
+}
+```
+
+### POST /api/read
+
+读取 URL 内容，支持批量。
+
+**请求体**：
+```json
+{
+  "urls": ["https://example.com"],
+  "timeoutMs": 30000,
+  "startChar": 0,
+  "maxLength": 5000,
+  "section": "Installation",
+  "paragraphRange": "1-5",
+  "readHeadings": false
+}
+```
+
+**响应**：
+```json
+{
+  "success": true,
+  "urlCount": 1,
+  "duration": "2345ms",
+  "contentLength": 3000,
+  "content": "Markdown 内容..."
+}
+```
+
+### POST /api/library/search
+
+搜索编程库，获取 Context7 库 ID。
+
+**请求体**：
+```json
+{
+  "query": "如何使用 React hooks",
+  "libraryName": "react"
+}
+```
+
+**响应**：
+```json
+{
+  "success": true,
+  "libraryName": "react",
+  "resultCount": 5,
+  "duration": "500ms",
+  "results": [
+    {
+      "id": "/facebook/react",
+      "title": "React",
+      "description": "A JavaScript library for building UIs",
+      "snippets": 1500,
+      "benchmarkScore": 95,
+      "trustScore": 98
+    }
+  ]
+}
+```
+
+### POST /api/library/docs
+
+查询库文档和代码示例。
+
+**请求体**：
+```json
+{
+  "libraryId": "/facebook/react",
+  "query": "useEffect cleanup function"
+}
+```
+
+**响应**：
+```json
+{
+  "success": true,
+  "libraryId": "/facebook/react",
+  "query": "useEffect cleanup function",
+  "duration": "800ms",
+  "contentLength": 2000,
+  "data": "文档内容..."
+}
+```
 
 ## 开发指南
 
@@ -211,6 +415,7 @@ src/
 ├── error-handler.ts  # 错误处理
 ├── resources.ts      # 资源定义
 ├── http-server.ts    # HTTP 服务器
+├── api-routes.ts     # REST API 路由
 └── proxy.ts          # 代理配置
 ```
 

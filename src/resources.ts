@@ -1,6 +1,10 @@
 import { getCurrentLogLevel } from "./logging.js";
 import { packageVersion } from "./index.js";
 
+const EMBEDDING_API_KEY = process.env.EMBEDDING_API_KEY || '';
+const EMBEDDING_BASE_URL = process.env.EMBEDDING_BASE_URL || process.env.OLLAMA_HOST || '';
+const isEmbeddingEnabled = !!(EMBEDDING_API_KEY || EMBEDDING_BASE_URL);
+
 export function createConfigResource() {
   const config = {
     serverInfo: {
@@ -10,20 +14,24 @@ export function createConfigResource() {
     },
     environment: {
       searxngUrl: process.env.SEARXNG_URL || "(not configured)",
-      ollamaHost: process.env.OLLAMA_HOST || "http://localhost:11434",
+      embeddingApiKey: EMBEDDING_API_KEY ? "(configured)" : "(not configured)",
+      embeddingBaseUrl: EMBEDDING_BASE_URL || "(not configured)",
       hasAuth: !!(process.env.AUTH_USERNAME && process.env.AUTH_PASSWORD),
       hasProxy: !!(process.env.HTTP_PROXY || process.env.HTTPS_PROXY || process.env.http_proxy || process.env.https_proxy),
       nodeVersion: process.version,
       currentLogLevel: getCurrentLogLevel()
     },
     capabilities: {
-      tools: ["search", "read", "code_resolve", "code_query"],
-      logging: true,
-      resources: true,
+      tools: ["search", "read", "library_search", "library_docs"],
       transports: process.env.MCP_HTTP_PORT ? ["stdio", "http"] : ["stdio"]
+    },
+    embedding: {
+      enabled: isEmbeddingEnabled,
+      model: process.env.EMBEDDING_MODEL || 'nomic-embed-text',
+      topK: parseInt(process.env.TOP_K || '5', 10)
     }
   };
-
+  
   return JSON.stringify(config, null, 2);
 }
 
@@ -59,14 +67,14 @@ export function createHelpResource() {
 - \`paragraphRange\`: 段落范围
 - \`readHeadings\`: 仅返回标题列表
 
-### 3. code_resolve
-解析库名为 Context7 兼容的库 ID。
+### 3. library_search
+搜索编程库，获取 Context7 兼容的库 ID。
 
 **参数：**
 - \`query\`: 用户问题（用于相关性排序）
 - \`libraryName\`: 库名，如 react
 
-### 4. code_query
+### 4. library_docs
 查询库的文档和代码示例。
 
 **参数：**
@@ -79,9 +87,14 @@ export function createHelpResource() {
 - \`SEARXNG_URL\`: SearXNG 实例地址
 
 ### 可选环境变量
-- \`OLLAMA_HOST\`: Ollama 地址（默认 http://localhost:11434）
+- \`EMBEDDING_API_KEY\`: OpenAI 兼容 API 密钥
+- \`EMBEDDING_BASE_URL\`: API 端点地址（或用 OLLAMA_HOST）
 - \`EMBEDDING_MODEL\`: 嵌入模型（默认 nomic-embed-text）
 - \`MCP_HTTP_PORT\`: HTTP 模式端口
+- \`SEARCH_PAGES\`: 搜索页数（默认智能调整）
+- \`SEARCH_ENGINES\`: 搜索引擎（默认空=使用SearXNG默认配置）
+  - 留空或 "all": 使用 SearXNG 默认全部引擎
+  - "google,baidu,bing": 指定引擎列表
 - \`CONTEXT7_API_KEY\`: Context7 API Key（可选）
 
 ## 传输模式

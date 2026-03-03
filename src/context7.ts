@@ -204,8 +204,8 @@ export function formatSearchResults(response: SearchResponse): string {
 // ============== 工具定义 ==============
 
 export const CODE_RESOLVE_TOOL: Tool = {
-  name: "code_resolve",
-  description: `搜索编程库/框架，获取库 ID。用于查找代码文档、API 用法、代码示例。`,
+  name: "library_search",
+  description: `搜索编程库。查找库/框架的文档、API、代码示例。返回多个匹配结果，选择一个库 ID 后再用 library_docs 查询。`,
   annotations: {
     readOnlyHint: true,
   },
@@ -227,8 +227,8 @@ export const CODE_RESOLVE_TOOL: Tool = {
 };
 
 export const CODE_QUERY_TOOL: Tool = {
-  name: "code_query",
-  description: `查询编程库的文档和代码示例。获取 API 用法、最佳实践、代码片段。`,
+  name: "library_docs",
+  description: `查询库文档。需要先通过 library_search 获取库 ID。获取 API 用法、最佳实践、代码片段。`,
   annotations: {
     readOnlyHint: true,
   },
@@ -238,7 +238,7 @@ export const CODE_QUERY_TOOL: Tool = {
       libraryId: {
         type: "string",
         description:
-          "准确的 Context7 兼容库 ID（例如 '/mongodb/docs'、'/vercel/next.js'、'/supabase/supabase'、'/vercel/next.js/v14.3.0-canary.87'），从 'code_resolve' 获取或直接从用户查询中以 '/org/project' 或 '/org/project/version' 格式提供。",
+          "准确的 Context7 兼容库 ID（例如 '/mongodb/docs'、'/vercel/next.js'、'/supabase/supabase'、'/vercel/next.js/v14.3.0-canary.87'），从 'library_search' 获取或直接从用户查询中以 '/org/project' 或 '/org/project/version' 格式提供。",
       },
       query: {
         type: "string",

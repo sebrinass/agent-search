@@ -30,7 +30,7 @@ import {
 } from "./context7.js";
 
 // Use a static version string that will be updated by the version script
-const packageVersion = "1.0.1";
+const packageVersion = "1.1.0";
 
 // Export the version for use in other modules
 export { packageVersion };
@@ -48,24 +48,7 @@ const server = new Server(
     capabilities: {
       logging: {},
       resources: {},
-      tools: {
-        search: {
-          description: SEARCH_TOOL.description,
-          schema: SEARCH_TOOL.inputSchema,
-        },
-        read: {
-          description: READ_URL_TOOL.description,
-          schema: READ_URL_TOOL.inputSchema,
-        },
-        code_resolve: {
-          description: CODE_RESOLVE_TOOL.description,
-          schema: CODE_RESOLVE_TOOL.inputSchema,
-        },
-        code_query: {
-          description: CODE_QUERY_TOOL.description,
-          schema: CODE_QUERY_TOOL.inputSchema,
-        },
-      },
+      tools: {},
     },
   }
 );
@@ -131,9 +114,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       return result;
-    } else if (name === "code_resolve") {
+    } else if (name === "library_search") {
       if (!isCodeResolveArgs(args)) {
-        throw new Error("Invalid arguments for code_resolve");
+        throw new Error("Invalid arguments for library_search");
       }
 
       const searchResponse = await searchLibraries(args.query, args.libraryName);
@@ -158,9 +141,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           },
         ],
       };
-    } else if (name === "code_query") {
+    } else if (name === "library_docs") {
       if (!isCodeQueryArgs(args)) {
-        throw new Error("Invalid arguments for code_query");
+        throw new Error("Invalid arguments for library_docs");
       }
 
       const response = await fetchLibraryContext(args.libraryId, args.query);
@@ -177,9 +160,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       throw new Error(`Unknown tool: ${name}`);
     }
   } catch (error) {
+    const sanitizedArgs = args ? JSON.stringify(args).replace(/"(api[_-]?key|token|password|secret|authorization)"\s*:\s*"[^"]*"/gi, '"$1":"[REDACTED]"') : undefined;
     logMessage(server, "error", `Tool execution error: ${error instanceof Error ? error.message : String(error)}`, { 
       tool: name, 
-      args: args,
+      args: sanitizedArgs ? JSON.parse(sanitizedArgs) : args,
       error: error instanceof Error ? error.stack : String(error)
     });
     throw error;
@@ -268,12 +252,13 @@ async function main() {
     }
 
     console.log(`Starting HTTP transport on port ${port}`);
-    const app = await createHttpServer(server);
+    const app = await createHttpServer(server, { researchServer });
     
     const httpServer = app.listen(port, () => {
       console.log(`HTTP server listening on port ${port}`);
       console.log(`Health check: http://localhost:${port}/health`);
       console.log(`MCP endpoint: http://localhost:${port}/mcp`);
+      console.log(`API endpoints: http://localhost:${port}/api`);
     });
 
     // Handle graceful shutdown

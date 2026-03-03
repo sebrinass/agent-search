@@ -8,10 +8,9 @@
 
 import { strict as assert } from 'node:assert';
 import { 
-  packageVersion, 
-  isWebUrlReadArgs 
+  packageVersion
 } from '../../src/index.js';
-import { isSearXNGWebSearchArgs } from '../../src/types.js';
+import { isWebUrlReadArgs } from '../../src/types.js';
 import { createConfigResource, createHelpResource } from '../../src/resources.js';
 import { testFunction, createTestResults, printTestSummary } from '../helpers/test-utils.js';
 
@@ -28,13 +27,15 @@ async function runTests() {
 
   await testFunction('Call tool handler - unknown tool error', async () => {
     const unknownToolRequest = { name: 'unknown_tool', arguments: {} };
-    assert.notEqual(unknownToolRequest.name, 'searxng_web_search');
-    assert.notEqual(unknownToolRequest.name, 'web_url_read');
+    assert.notEqual(unknownToolRequest.name, 'search');
+    assert.notEqual(unknownToolRequest.name, 'read');
 
     // Simulate error response
     try {
-      if (unknownToolRequest.name !== 'searxng_web_search' &&
-          unknownToolRequest.name !== 'web_url_read') {
+      if (unknownToolRequest.name !== 'search' &&
+          unknownToolRequest.name !== 'read' &&
+          unknownToolRequest.name !== 'library_search' &&
+          unknownToolRequest.name !== 'library_docs') {
         throw new Error(`Unknown tool: ${unknownToolRequest.name}`);
       }
     } catch (error) {
@@ -45,7 +46,7 @@ async function runTests() {
 
   await testFunction('URL read tool with pagination parameters integration', async () => {
     const validArgs = {
-      url: 'https://example.com',
+      urls: ['https://example.com'],
       startChar: 10,
       maxLength: 100,
       section: 'introduction',
@@ -57,16 +58,16 @@ async function runTests() {
     assert.ok(isWebUrlReadArgs(validArgs));
 
     // Test individual parameter validation
-    assert.ok(isWebUrlReadArgs({ url: 'https://example.com', startChar: 0 }));
-    assert.ok(isWebUrlReadArgs({ url: 'https://example.com', maxLength: 1 }));
-    assert.ok(isWebUrlReadArgs({ url: 'https://example.com', section: 'test' }));
-    assert.ok(isWebUrlReadArgs({ url: 'https://example.com', paragraphRange: '1' }));
-    assert.ok(isWebUrlReadArgs({ url: 'https://example.com', readHeadings: true }));
+    assert.ok(isWebUrlReadArgs({ urls: ['https://example.com'], startChar: 0 }));
+    assert.ok(isWebUrlReadArgs({ urls: ['https://example.com'], maxLength: 1 }));
+    assert.ok(isWebUrlReadArgs({ urls: ['https://example.com'], section: 'test' }));
+    assert.ok(isWebUrlReadArgs({ urls: ['https://example.com'], paragraphRange: '1' }));
+    assert.ok(isWebUrlReadArgs({ urls: ['https://example.com'], readHeadings: true }));
   }, results);
 
   await testFunction('Pagination options object construction', async () => {
     const testArgs = {
-      url: 'https://example.com',
+      urls: ['https://example.com'],
       startChar: 50,
       maxLength: 200,
       section: 'getting-started',
@@ -149,26 +150,17 @@ async function runTests() {
     }
   }, results);
 
-  await testFunction('Tool arguments validation - search tool', () => {
-    // Valid cases
-    assert.ok(isSearXNGWebSearchArgs({ query: 'test search', language: 'en' }));
-    assert.ok(isSearXNGWebSearchArgs({ query: 'test', pageno: 1, time_range: 'day' }));
-    
-    // Invalid cases
-    assert.ok(!isSearXNGWebSearchArgs({ notQuery: 'invalid' }));
-    assert.ok(!isSearXNGWebSearchArgs(null));
-    assert.ok(!isSearXNGWebSearchArgs({}));
-  }, results);
-
   await testFunction('Tool arguments validation - URL read tool', () => {
     // Valid cases with various pagination parameters
-    assert.ok(isWebUrlReadArgs({ url: 'https://example.com' }));
-    assert.ok(isWebUrlReadArgs({ url: 'https://example.com', maxLength: 100 }));
+    assert.ok(isWebUrlReadArgs({ urls: ['https://example.com'] }));
+    assert.ok(isWebUrlReadArgs({ urls: ['https://example.com'], maxLength: 100 }));
+    assert.ok(isWebUrlReadArgs({ urls: ['https://a.com', 'https://b.com'] }));
     
     // Invalid cases
-    assert.ok(!isWebUrlReadArgs({ url: 'https://example.com', startChar: -1 }));
-    assert.ok(!isWebUrlReadArgs({ url: 'https://example.com', maxLength: 0 }));
-    assert.ok(!isWebUrlReadArgs({ notUrl: 'invalid' }));
+    assert.ok(!isWebUrlReadArgs({ urls: ['https://example.com'], startChar: -1 }));
+    assert.ok(!isWebUrlReadArgs({ urls: ['https://example.com'], maxLength: 0 }));
+    assert.ok(!isWebUrlReadArgs({ notUrls: ['invalid'] }));
+    assert.ok(!isWebUrlReadArgs({ urls: [] }));
   }, results);
 
   printTestSummary(results, 'Main Server Integration');

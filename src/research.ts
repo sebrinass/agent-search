@@ -20,6 +20,10 @@ const MAX_THOUGHTS = parseInt(process.env.MAX_THOUGHTS || '5', 10);
 const MAX_KEYWORDS = parseInt(process.env.MAX_KEYWORDS || '3', 10);
 const SEARCH_TIMEOUT_MS = parseInt(process.env.SEARCH_TIMEOUT_MS || '30000', 10);
 const MAX_DESCRIPTION_LENGTH = parseInt(process.env.MAX_DESCRIPTION_LENGTH || '200', 10);
+const EMBEDDING_API_KEY = process.env.EMBEDDING_API_KEY || '';
+const EMBEDDING_BASE_URL = process.env.EMBEDDING_BASE_URL || process.env.OLLAMA_HOST || '';
+const isEmbeddingEnabled = !!(EMBEDDING_API_KEY || EMBEDDING_BASE_URL);
+const DEFAULT_SEARCH_PAGES = isEmbeddingEnabled ? 3 : 1;
 
 // ============ 类型定义 ============
 
@@ -37,6 +41,10 @@ export interface ThoughtData {
   searchedKeywords?: string[];
   /** 是否需要继续思考 */
   nextThoughtNeeded: boolean;
+  /** 限制搜索范围到具体网站（可选） */
+  site?: string;
+  /** 时间范围过滤（可选）：day, month, year */
+  time_range?: string;
 }
 
 /**
@@ -105,7 +113,7 @@ export class ResearchServer {
   /**
    * 执行 SearXNG 搜索
    */
-  private async performSearXNGSearch(keyword: string, site?: string): Promise<SearchResult[]> {
+  private async performSearXNGSearch(keyword: string, site?: string, time_range?: string): Promise<SearchResult[]> {
     if (!this.server) {
       throw new Error("Server not initialized");
     }
@@ -115,55 +123,67 @@ export class ResearchServer {
       throw new Error("SEARXNG_URL not configured");
     }
 
-    // 构建搜索 URL
+    const SEARCH_PAGES = parseInt(process.env.SEARCH_PAGES || String(DEFAULT_SEARCH_PAGES), 10);
+
     const baseUrl = searxngUrl.endsWith('/') ? searxngUrl : searxngUrl + '/';
-    const url = new URL('search', baseUrl);
     
-    // 构建查询词（支持站内搜索）
     let query = keyword;
     if (site) {
       query = `site:${site} ${keyword}`;
     }
-    
-    url.searchParams.set("q", query);
-    url.searchParams.set("format", "json");
-    url.searchParams.set("pageno", "1");
 
-    // 添加语言设置
-    const language = process.env.SEARCH_LANGUAGE || "all";
-    if (language !== "all") {
-      url.searchParams.set("language", language);
+    const pagePromises: Promise<{ results?: Array<{ title?: string; content?: string; url?: string; score?: number }> }>[] = [];
+    
+    for (let page = 1; page <= SEARCH_PAGES; page++) {
+      const url = new URL('search', baseUrl);
+      url.searchParams.set("q", query);
+      url.searchParams.set("format", "json");
+      url.searchParams.set("pageno", page.toString());
+
+      const language = process.env.SEARCH_LANGUAGE || "all";
+      if (language !== "all") {
+        url.searchParams.set("language", language);
+      }
+
+      const safesearch = process.env.SAFE_SEARCH || "0";
+      url.searchParams.set("safesearch", safesearch);
+
+      if (time_range && ["day", "month", "year"].includes(time_range)) {
+        url.searchParams.set("time_range", time_range);
+      }
+
+      pagePromises.push(
+        fetch(url.toString(), {
+          method: "GET",
+          headers: { 'Accept': 'application/json' }
+        }).then(r => r.json())
+      );
     }
 
-    // 添加安全搜索设置
-    const safesearch = process.env.SAFE_SEARCH || "0";
-    url.searchParams.set("safesearch", safesearch);
-
     try {
-      const response = await fetch(url.toString(), {
-        method: "GET",
-        headers: {
-          'Accept': 'application/json',
+      const pageResults = await Promise.all(pagePromises);
+      
+      const seenUrls = new Set<string>();
+      const allResults: SearchResult[] = [];
+      
+      for (const data of pageResults) {
+        if (data.results) {
+          for (const result of data.results) {
+            const url = result.url || "";
+            if (url && !seenUrls.has(url)) {
+              seenUrls.add(url);
+              allResults.push({
+                title: result.title || "",
+                content: result.content || "",
+                url: url,
+                score: result.score || 0,
+              });
+            }
+          }
         }
-      });
-
-      if (!response.ok) {
-        throw new Error(`SearXNG returned ${response.status}: ${response.statusText}`);
       }
 
-      const data = await response.json() as { results?: Array<{ title?: string; content?: string; url?: string; score?: number }> };
-
-      if (!data.results || data.results.length === 0) {
-        return [];
-      }
-
-      // 转换为标准格式
-      return data.results.map((result) => ({
-        title: result.title || "",
-        content: result.content || "",
-        url: result.url || "",
-        score: result.score || 0,
-      }));
+      return allResults;
     } catch (error) {
       throw error;
     }
@@ -173,7 +193,7 @@ export class ResearchServer {
    * 执行单个关键词搜索
    * 集成混合检索和链接去重
    */
-  private async searchKeyword(keyword: string, site?: string): Promise<KeywordSearchResult> {
+  private async searchKeyword(keyword: string, site?: string, time_range?: string): Promise<KeywordSearchResult> {
     if (!this.server) {
       return {
         keyword,
@@ -185,8 +205,7 @@ export class ResearchServer {
     }
 
     try {
-      // 1. 执行 SearXNG 搜索
-      const rawResults = await this.performSearXNGSearch(keyword, site);
+      const rawResults = await this.performSearXNGSearch(keyword, site, time_range);
 
       if (rawResults.length === 0) {
         return {
@@ -197,15 +216,12 @@ export class ResearchServer {
         };
       }
 
-      // 2. 应用混合检索重排序
       const rerankedResults = await rerankWithHybridSearch(keyword, rawResults);
 
-      // 3. 应用链接去重
       const dedupedResults: SearchResultItem[] = [];
       const newUrls: string[] = [];
 
       for (const result of rerankedResults) {
-        // 检查是否已去重
         if (!isLinkDuplicate(result.url)) {
           dedupedResults.push({
             title: result.title,
@@ -219,7 +235,6 @@ export class ResearchServer {
         }
       }
 
-      // 4. 将新链接添加到去重池
       if (newUrls.length > 0) {
         addLinksToDedup(newUrls);
       }
@@ -247,12 +262,11 @@ export class ResearchServer {
    */
   private async searchKeywords(
     keywords: string[],
-    site?: string
+    site?: string,
+    time_range?: string
   ): Promise<KeywordSearchResult[]> {
-    // 限制关键词数量
     const limitedKeywords = keywords.slice(0, MAX_KEYWORDS);
 
-    // 去重
     const uniqueKeywords = Array.from(new Set(limitedKeywords));
 
     if (uniqueKeywords.length === 0) {
@@ -263,13 +277,12 @@ export class ResearchServer {
       logMessage(this.server, "info", `Research: 开始并发搜索 ${uniqueKeywords.length} 个关键词`);
     }
 
-    // 创建带超时的 Promise
     const searchWithTimeout = async (keyword: string): Promise<KeywordSearchResult> => {
       const timeoutPromise = new Promise<KeywordSearchResult>((_, reject) => {
         setTimeout(() => reject(new Error('搜索超时')), SEARCH_TIMEOUT_MS);
       });
 
-      const searchPromise = this.searchKeyword(keyword, site);
+      const searchPromise = this.searchKeyword(keyword, site, time_range);
 
       try {
         return await Promise.race([searchPromise, timeoutPromise]);
@@ -284,7 +297,6 @@ export class ResearchServer {
       }
     };
 
-    // 并发执行所有搜索
     const results = await Promise.all(uniqueKeywords.map(kw => searchWithTimeout(kw)));
 
     if (this.server) {
@@ -333,7 +345,7 @@ export class ResearchServer {
       let searchResults: KeywordSearchResult[] | undefined;
 
       if (input.searchedKeywords && input.searchedKeywords.length > 0) {
-        searchResults = await this.searchKeywords(input.searchedKeywords);
+        searchResults = await this.searchKeywords(input.searchedKeywords, input.site, input.time_range);
       }
 
       // 构建返回结果
@@ -445,6 +457,11 @@ export const SEARCH_TOOL: Tool = {
       site: {
         type: "string",
         description: "限制搜索范围到具体网站。当搜索结果中发现类似知识库或者项目文档的网站时，建议使用此参数进行深度挖掘"
+      },
+      time_range: {
+        type: "string",
+        enum: ["day", "month", "year"],
+        description: "时间范围过滤（可选）：day=最近一天，month=最近一月，year=最近一年"
       },
       isRevision: {
         type: "boolean",

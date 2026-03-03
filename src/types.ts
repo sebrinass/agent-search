@@ -1,5 +1,11 @@
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
 
+declare global {
+  interface RequestInit {
+    dispatcher?: unknown;
+  }
+}
+
 export interface SearXNGWeb {
   results: Array<{
     title: string;
@@ -68,7 +74,7 @@ export function isWebUrlReadArgs(args: unknown): args is {
     return false;
   }
 
-  const urlArgs = args as any;
+  const urlArgs = args as Record<string, unknown>;
 
   if (!("urls" in urlArgs) || !Array.isArray(urlArgs.urls) || urlArgs.urls.length === 0) {
     return false;

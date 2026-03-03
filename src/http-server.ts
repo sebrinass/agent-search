@@ -6,14 +6,31 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { logMessage } from "./logging.js";
 import { packageVersion } from "./index.js";
+import { createApiRouter, ApiRouterOptions } from "./api-routes.js";
+import { ResearchServer } from "./research.js";
 
-export async function createHttpServer(server: Server): Promise<express.Application> {
+export interface HttpServerOptions {
+  researchServer: ResearchServer;
+}
+
+export async function createHttpServer(server: Server, options?: HttpServerOptions): Promise<express.Application> {
   const app = express();
   app.use(express.json());
   
   // Add CORS support for web clients
+  const allowedOrigins = process.env.ALLOWED_ORIGINS 
+    ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+    : ['http://localhost:3000', 'http://127.0.0.1:3000'];
+  
   app.use(cors({
-    origin: '*', // Configure appropriately for production
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true,
     exposedHeaders: ['Mcp-Session-Id'],
     allowedHeaders: ['Content-Type', 'mcp-session-id'],
   }));
@@ -155,6 +172,15 @@ export async function createHttpServer(server: Server): Promise<express.Applicat
       transport: 'http'
     });
   });
+
+  if (options?.researchServer) {
+    const apiRouter = createApiRouter({
+      server,
+      researchServer: options.researchServer
+    });
+    app.use('/api', apiRouter);
+    logMessage(server, "info", "API routes mounted at /api");
+  }
 
   return app;
 }
