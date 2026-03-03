@@ -37,3 +37,6 @@ logs
 # OS files
 .DS_Store
 Thumbs.db
+
+# Development files
+重构需求清单.md
