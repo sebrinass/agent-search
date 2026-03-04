@@ -14,10 +14,11 @@ import {
   createUnexpectedError,
   type ErrorContext
 } from "./error-handler.js";
-
-// ============ 环境变量配置 ============
-const ENABLE_JS_RENDER = process.env.ENABLE_JS_RENDER !== 'false'; // 默认 true
-const ENABLE_READABILITY = process.env.ENABLE_READABILITY !== 'false'; // 默认 true
+import {
+  FETCH_TIMEOUT_MS,
+  ENABLE_JS_RENDER,
+  ENABLE_READABILITY
+} from "./config.js";
 
 // ============ 类型定义 ============
 export interface PaginationOptions {
@@ -561,13 +562,13 @@ async function fetchMultipleUrls(
  *   - "https://a.com" → 读取单个
  *   - "https://a.com | https://b.com" → 读取多个（用 | 分隔）
  *   - ["https://a.com", "https://b.com"] → 数组形式
- * @param timeoutMs - 超时时间（毫秒），默认 10000
+ * @param timeoutMs - 超时时间（毫秒），默认使用 FETCH_TIMEOUT_MS 环境变量（30000）
  * @param options - 分页选项
  */
 export async function fetchAndConvertToMarkdown(
   server: Server,
   urlOrUrls: string | string[],
-  timeoutMs: number = 10000,
+  timeoutMs: number = FETCH_TIMEOUT_MS,
   options: PaginationOptions = {}
 ): Promise<string> {
   // 解析输入

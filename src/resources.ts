@@ -1,9 +1,18 @@
 import { getCurrentLogLevel } from "./logging.js";
 import { packageVersion } from "./index.js";
-
-const EMBEDDING_API_KEY = process.env.EMBEDDING_API_KEY || '';
-const EMBEDDING_BASE_URL = process.env.EMBEDDING_BASE_URL || process.env.OLLAMA_HOST || '';
-const isEmbeddingEnabled = !!(EMBEDDING_API_KEY || EMBEDDING_BASE_URL);
+import {
+  SEARXNG_URL,
+  EMBEDDING_API_KEY,
+  EMBEDDING_BASE_URL,
+  EMBEDDING_MODEL,
+  TOP_K,
+  AUTH_USERNAME,
+  AUTH_PASSWORD,
+  HTTP_PROXY,
+  HTTPS_PROXY,
+  MCP_HTTP_PORT,
+  isEmbeddingEnabled
+} from "./config.js";
 
 export function createConfigResource() {
   const config = {
@@ -13,22 +22,22 @@ export function createConfigResource() {
       description: "增强型 MCP 搜索服务器"
     },
     environment: {
-      searxngUrl: process.env.SEARXNG_URL || "(not configured)",
+      searxngUrl: SEARXNG_URL || "(not configured)",
       embeddingApiKey: EMBEDDING_API_KEY ? "(configured)" : "(not configured)",
       embeddingBaseUrl: EMBEDDING_BASE_URL || "(not configured)",
-      hasAuth: !!(process.env.AUTH_USERNAME && process.env.AUTH_PASSWORD),
-      hasProxy: !!(process.env.HTTP_PROXY || process.env.HTTPS_PROXY || process.env.http_proxy || process.env.https_proxy),
+      hasAuth: !!(AUTH_USERNAME && AUTH_PASSWORD),
+      hasProxy: !!(HTTP_PROXY || HTTPS_PROXY),
       nodeVersion: process.version,
       currentLogLevel: getCurrentLogLevel()
     },
     capabilities: {
       tools: ["search", "read", "library_search", "library_docs"],
-      transports: process.env.MCP_HTTP_PORT ? ["stdio", "http"] : ["stdio"]
+      transports: MCP_HTTP_PORT ? ["stdio", "http"] : ["stdio"]
     },
     embedding: {
       enabled: isEmbeddingEnabled,
-      model: process.env.EMBEDDING_MODEL || 'nomic-embed-text',
-      topK: parseInt(process.env.TOP_K || '5', 10)
+      model: EMBEDDING_MODEL,
+      topK: TOP_K
     }
   };
   

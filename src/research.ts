@@ -14,16 +14,19 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { logMessage } from "./logging.js";
 import { rerankWithHybridSearch, type SearchResult, type ScoredResult } from "./embedding.js";
 import { addLinksToDedup, isLinkDuplicate } from "./cache.js";
-
-// ============ 环境变量配置 ============
-const MAX_THOUGHTS = parseInt(process.env.MAX_THOUGHTS || '5', 10);
-const MAX_KEYWORDS = parseInt(process.env.MAX_KEYWORDS || '3', 10);
-const SEARCH_TIMEOUT_MS = parseInt(process.env.SEARCH_TIMEOUT_MS || '30000', 10);
-const MAX_DESCRIPTION_LENGTH = parseInt(process.env.MAX_DESCRIPTION_LENGTH || '200', 10);
-const EMBEDDING_API_KEY = process.env.EMBEDDING_API_KEY || '';
-const EMBEDDING_BASE_URL = process.env.EMBEDDING_BASE_URL || process.env.OLLAMA_HOST || '';
-const isEmbeddingEnabled = !!(EMBEDDING_API_KEY || EMBEDDING_BASE_URL);
-const DEFAULT_SEARCH_PAGES = isEmbeddingEnabled ? 3 : 1;
+import {
+  MAX_THOUGHTS,
+  MAX_KEYWORDS,
+  SEARCH_TIMEOUT_MS,
+  MAX_DESCRIPTION_LENGTH,
+  SEARXNG_URL,
+  SEARCH_PAGES,
+  SEARCH_LANGUAGE,
+  SAFE_SEARCH,
+  DEFAULT_SEARCH_PAGES,
+  isEmbeddingEnabled,
+  getResearchConfig
+} from "./config.js";
 
 // ============ 类型定义 ============
 
@@ -110,22 +113,16 @@ export class ResearchServer {
     this.server = server;
   }
 
-  /**
-   * 执行 SearXNG 搜索
-   */
   private async performSearXNGSearch(keyword: string, site?: string, time_range?: string): Promise<SearchResult[]> {
     if (!this.server) {
       throw new Error("Server not initialized");
     }
 
-    const searxngUrl = process.env.SEARXNG_URL;
-    if (!searxngUrl) {
+    if (!SEARXNG_URL) {
       throw new Error("SEARXNG_URL not configured");
     }
 
-    const SEARCH_PAGES = parseInt(process.env.SEARCH_PAGES || String(DEFAULT_SEARCH_PAGES), 10);
-
-    const baseUrl = searxngUrl.endsWith('/') ? searxngUrl : searxngUrl + '/';
+    const baseUrl = SEARXNG_URL.endsWith('/') ? SEARXNG_URL : SEARXNG_URL + '/';
     
     let query = keyword;
     if (site) {
@@ -140,13 +137,11 @@ export class ResearchServer {
       url.searchParams.set("format", "json");
       url.searchParams.set("pageno", page.toString());
 
-      const language = process.env.SEARCH_LANGUAGE || "all";
-      if (language !== "all") {
-        url.searchParams.set("language", language);
+      if (SEARCH_LANGUAGE !== "all") {
+        url.searchParams.set("language", SEARCH_LANGUAGE);
       }
 
-      const safesearch = process.env.SAFE_SEARCH || "0";
-      url.searchParams.set("safesearch", safesearch);
+      url.searchParams.set("safesearch", SAFE_SEARCH.toString());
 
       if (time_range && ["day", "month", "year"].includes(time_range)) {
         url.searchParams.set("time_range", time_range);
@@ -487,17 +482,3 @@ export const SEARCH_TOOL: Tool = {
     required: ["thought", "nextThoughtNeeded", "thoughtNumber", "totalThoughts"]
   }
 };
-
-// ============ 导出配置信息 ============
-
-/**
- * 获取 Research 配置
- */
-export function getResearchConfig() {
-  return {
-    maxThoughts: MAX_THOUGHTS,
-    maxKeywords: MAX_KEYWORDS,
-    searchTimeoutMs: SEARCH_TIMEOUT_MS,
-    maxDescriptionLength: MAX_DESCRIPTION_LENGTH
-  };
-}

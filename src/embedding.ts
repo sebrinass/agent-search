@@ -15,15 +15,16 @@
 
 import MiniSearch from 'minisearch';
 import { embeddingCache } from './cache.js';
-
-// ============ 环境变量配置 ============
-const EMBEDDING_API_KEY = process.env.EMBEDDING_API_KEY || '';
-const EMBEDDING_BASE_URL = process.env.EMBEDDING_BASE_URL || process.env.OLLAMA_HOST || '';
-const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || 'nomic-embed-text';
-const TOP_K = parseInt(process.env.TOP_K || '5', 10);
-const RRF_K = 60;
-
-const isEmbeddingEnabled = !!(EMBEDDING_API_KEY || EMBEDDING_BASE_URL);
+import {
+  EMBEDDING_API_KEY,
+  EMBEDDING_BASE_URL,
+  EMBEDDING_MODEL,
+  TOP_K,
+  RRF_K,
+  isEmbeddingEnabled,
+  getEmbeddingConfig
+} from './config.js';
+import { logMessage } from './logging.js';
 
 // ============ 类型定义 ============
 export interface SearchResult {
@@ -151,7 +152,7 @@ async function getOpenAIEmbedding(text: string): Promise<number[]> {
     
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[Embedding] API error: ${response.status} ${response.statusText} - ${errorText}`);
+      logMessage(null, 'error', `Embedding API error: ${response.status} ${response.statusText} - ${errorText}`);
       return [];
     }
     
@@ -162,7 +163,7 @@ async function getOpenAIEmbedding(text: string): Promise<number[]> {
     const embedding = data.data?.[0]?.embedding;
     
     if (!embedding || embedding.length === 0) {
-      console.error('[Embedding] No embedding returned from API');
+      logMessage(null, 'error', 'No embedding returned from API');
       return [];
     }
     
@@ -170,7 +171,7 @@ async function getOpenAIEmbedding(text: string): Promise<number[]> {
     
     return embedding;
   } catch (error) {
-    console.error('[Embedding] Error getting embedding:', error);
+    logMessage(null, 'error', `Error getting embedding: ${error instanceof Error ? error.message : String(error)}`);
     return [];
   }
 }
@@ -321,15 +322,4 @@ export async function rerankWithHybridSearch(
   const fusedResults = rrfFusion(bm25Results, semanticResults);
   
   return fusedResults.slice(0, TOP_K);
-}
-
-// ============ 导出配置信息 ============
-export function getEmbeddingConfig() {
-  return {
-    enabled: isEmbeddingEnabled,
-    baseUrl: EMBEDDING_BASE_URL || 'not configured',
-    model: EMBEDDING_MODEL,
-    topK: TOP_K,
-    rrfK: RRF_K
-  };
 }

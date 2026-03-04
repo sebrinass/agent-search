@@ -11,13 +11,14 @@ import {
   createNoResultsMessage,
   type ErrorContext
 } from "./error-handler.js";
-
-const EMBEDDING_API_KEY = process.env.EMBEDDING_API_KEY || '';
-const EMBEDDING_BASE_URL = process.env.EMBEDDING_BASE_URL || process.env.OLLAMA_HOST || '';
-const isEmbeddingEnabled = !!(EMBEDDING_API_KEY || EMBEDDING_BASE_URL);
-const DEFAULT_SEARCH_PAGES = isEmbeddingEnabled ? 3 : 1;
-const SEARCH_PAGES = parseInt(process.env.SEARCH_PAGES || String(DEFAULT_SEARCH_PAGES), 10);
-const SEARCH_ENGINES = process.env.SEARCH_ENGINES || '';
+import {
+  SEARCH_PAGES,
+  SEARCH_ENGINES,
+  SEARXNG_URL,
+  AUTH_USERNAME,
+  AUTH_PASSWORD,
+  USER_AGENT
+} from "./config.js";
 
 function getEnginesParam(): string | null {
   const engines = SEARCH_ENGINES.trim().toLowerCase();
@@ -36,9 +37,7 @@ async function fetchSinglePage(
   safesearch?: number,
   site?: string
 ): Promise<Array<{ title: string; content: string; url: string; score: number }>> {
-  const searxngUrl = process.env.SEARXNG_URL;
-
-  if (!searxngUrl) {
+  if (!SEARXNG_URL) {
     throw createConfigurationError(
       "SEARXNG_URL not set. Set it to your SearXNG instance (e.g., http://localhost:8080 or https://search.example.com)"
     );
@@ -46,10 +45,10 @@ async function fetchSinglePage(
 
   let parsedUrl: URL;
   try {
-    parsedUrl = new URL(searxngUrl.endsWith('/') ? searxngUrl : searxngUrl + '/');
+    parsedUrl = new URL(SEARXNG_URL.endsWith('/') ? SEARXNG_URL : SEARXNG_URL + '/');
   } catch (error) {
     throw createConfigurationError(
-      `Invalid SEARXNG_URL format: ${searxngUrl}. Use format: http://localhost:8080`
+      `Invalid SEARXNG_URL format: ${SEARXNG_URL}. Use format: http://localhost:8080`
     );
   }
 
@@ -93,8 +92,8 @@ async function fetchSinglePage(
     requestOptions.dispatcher = proxyAgent;
   }
 
-  const username = process.env.AUTH_USERNAME;
-  const password = process.env.AUTH_PASSWORD;
+  const username = AUTH_USERNAME;
+  const password = AUTH_PASSWORD;
 
   if (username && password) {
     const base64Auth = Buffer.from(`${username}:${password}`).toString('base64');
@@ -104,11 +103,10 @@ async function fetchSinglePage(
     };
   }
 
-  const userAgent = process.env.USER_AGENT;
-  if (userAgent) {
+  if (USER_AGENT) {
     requestOptions.headers = {
       ...requestOptions.headers,
-      'User-Agent': userAgent
+      'User-Agent': USER_AGENT
     };
   }
 
@@ -118,9 +116,9 @@ async function fetchSinglePage(
   } catch (error: any) {
     const context: ErrorContext = {
       url: url.toString(),
-      searxngUrl,
+      searxngUrl: SEARXNG_URL,
       proxyAgent: !!proxyAgent,
-      username
+      username: AUTH_USERNAME
     };
     throw createNetworkError(error, context);
   }
@@ -135,7 +133,7 @@ async function fetchSinglePage(
 
     const context: ErrorContext = {
       url: url.toString(),
-      searxngUrl
+      searxngUrl: SEARXNG_URL
     };
     throw createServerError(response.status, response.statusText, responseBody, context);
   }

@@ -1,12 +1,15 @@
 import crypto from 'crypto';
 import QuickLRU from 'quick-lru';
+import {
+  LINK_DEDUP_TTL,
+  URL_CACHE_TTL,
+  URL_CACHE_SIZE,
+  EMBEDDING_CACHE_SIZE
+} from "./config.js";
 
-// ============ 环境变量配置 ============
-const LINK_DEDUP_TTL = parseInt(process.env.LINK_DEDUP_TTL || '60', 10) * 1000; // 转为毫秒
-const URL_CACHE_TTL = parseInt(process.env.URL_CACHE_TTL || '60', 10) * 1000; // 转为毫秒
-const URL_CACHE_SIZE = parseInt(process.env.URL_CACHE_SIZE || '200', 10);
-const EMBEDDING_CACHE_SIZE = parseInt(process.env.EMBEDDING_CACHE_SIZE || '500', 10);
-const EMBEDDING_CACHE_TTL = 30 * 60 * 1000; // 30分钟，固定值
+const LINK_DEDUP_TTL_MS = LINK_DEDUP_TTL * 1000;
+const URL_CACHE_TTL_MS = URL_CACHE_TTL * 1000;
+const EMBEDDING_CACHE_TTL = 30 * 60 * 1000;
 
 // ============ 类型定义 ============
 interface UrlCacheValue {
@@ -28,7 +31,7 @@ class LinkDedupPool {
   constructor() {
     this.pool = new QuickLRU<string, number>({
       maxSize: 100,
-      maxAge: LINK_DEDUP_TTL
+      maxAge: LINK_DEDUP_TTL_MS
     });
   }
 
@@ -87,7 +90,7 @@ class UrlContentCache {
   constructor() {
     this.cache = new QuickLRU<string, UrlCacheValue>({
       maxSize: URL_CACHE_SIZE,
-      maxAge: URL_CACHE_TTL
+      maxAge: URL_CACHE_TTL_MS
     });
   }
 

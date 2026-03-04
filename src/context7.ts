@@ -4,6 +4,7 @@
  */
 
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
+import { CONTEXT7_API_KEY, CONTEXT7_API_URL } from "./config.js";
 
 // ============== 类型定义 ==============
 
@@ -35,7 +36,7 @@ export interface ContextResponse {
 
 // ============== 常量 ==============
 
-const CONTEXT7_API_BASE_URL = process.env.CONTEXT7_API_URL || "https://context7.com/api";
+const CONTEXT7_API_BASE_URL = CONTEXT7_API_URL || "https://context7.com/api";
 
 // ============== 错误处理 ==============
 
@@ -98,7 +99,7 @@ export async function searchLibraries(
   query: string,
   libraryName: string
 ): Promise<SearchResponse> {
-  const apiKey = process.env.CONTEXT7_API_KEY;
+  const apiKey = CONTEXT7_API_KEY;
 
   try {
     const url = new URL(`${CONTEXT7_API_BASE_URL}/v2/libs/search`);
@@ -134,7 +135,7 @@ export async function fetchLibraryContext(
   libraryId: string,
   query: string
 ): Promise<ContextResponse> {
-  const apiKey = process.env.CONTEXT7_API_KEY;
+  const apiKey = CONTEXT7_API_KEY;
 
   try {
     const url = new URL(`${CONTEXT7_API_BASE_URL}/v2/context`);

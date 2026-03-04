@@ -10,27 +10,14 @@ import {
   ReadResourceRequestSchema,
   LoggingLevel,
 } from "@modelcontextprotocol/sdk/types.js";
-
-// Import modularized functionality
-import { READ_URL_TOOL, isWebUrlReadArgs } from "./types.js";
-import { logMessage, setLogLevel } from "./logging.js";
-import { fetchAndConvertToMarkdown } from "./url-reader.js";
-import { createConfigResource, createHelpResource } from "./resources.js";
-import { createHttpServer } from "./http-server.js";
 import { validateEnvironment as validateEnv } from "./error-handler.js";
-import { SEARCH_TOOL, ResearchServer, ThoughtData } from "./research.js";
-import {
-  CODE_RESOLVE_TOOL,
-  CODE_QUERY_TOOL,
-  isCodeResolveArgs,
-  isCodeQueryArgs,
-  searchLibraries,
-  fetchLibraryContext,
-  formatSearchResults,
-} from "./context7.js";
+import { logMessage, setLogLevel } from "./logging.js";
+import { createHttpServer } from "./http-server.js";
+import { createConfigResource, createHelpResource } from "./resources.js";
+import { SEARCH_TOOL, ResearchServer } from "./research.js";
+import { handleToolCall, getToolDefinitions } from "./tool-handlers.js";
 
-// Use a static version string that will be updated by the version script
-const packageVersion = "1.1.1";
+const packageVersion = "1.1.2";
 
 // Export the version for use in other modules
 export { packageVersion };
@@ -61,113 +48,14 @@ researchServer.setServer(server);
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   logMessage(server, "debug", "Handling list_tools request");
   return {
-    tools: [SEARCH_TOOL, READ_URL_TOOL, CODE_RESOLVE_TOOL, CODE_QUERY_TOOL],
+    tools: [SEARCH_TOOL, ...getToolDefinitions()],
   };
 });
 
 // Call tool handler
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
-  logMessage(server, "debug", `Handling call_tool request: ${name}`);
-
-  try {
-    if (name === "read") {
-      if (!isWebUrlReadArgs(args)) {
-        logMessage(server, "error", `Read tool validation failed. Args: ${JSON.stringify(args)}`);
-        throw new Error(`Invalid arguments for URL reading. Received: ${JSON.stringify(args)}`);
-      }
-
-      const paginationOptions = {
-        startChar: typeof args.startChar === 'number' ? args.startChar : 0,
-        maxLength: typeof args.maxLength === 'number' ? args.maxLength : undefined,
-        section: typeof args.section === 'string' ? args.section : undefined,
-        paragraphRange: typeof args.paragraphRange === 'string' ? args.paragraphRange : undefined,
-        readHeadings: args.readHeadings === true,
-      };
-
-      let result: string;
-
-      if (!args.urls || args.urls.length === 0) {
-        throw new Error("'urls' parameter is required with at least one URL");
-      }
-
-      const urls = args.urls;
-
-      if (urls.length > 1) {
-        logMessage(server, "info", `Batch URL reading: ${urls.length} URLs`);
-      }
-      result = await fetchAndConvertToMarkdown(server, urls, args.timeoutMs, paginationOptions);
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: result,
-          },
-        ],
-      };
-    } else if (name === "search") {
-      const result = await researchServer.processThought(args as unknown as ThoughtData);
-
-      if (result.isError) {
-        throw new Error("Search tool execution failed");
-      }
-
-      return result;
-    } else if (name === "library_search") {
-      if (!isCodeResolveArgs(args)) {
-        throw new Error("Invalid arguments for library_search");
-      }
-
-      const searchResponse = await searchLibraries(args.query, args.libraryName);
-
-      if (!searchResponse.results || searchResponse.results.length === 0) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: searchResponse.error || "No libraries found matching the provided name.",
-            },
-          ],
-        };
-      }
-
-      const resultsText = formatSearchResults(searchResponse);
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Available Libraries:\n\n${resultsText}`,
-          },
-        ],
-      };
-    } else if (name === "library_docs") {
-      if (!isCodeQueryArgs(args)) {
-        throw new Error("Invalid arguments for library_docs");
-      }
-
-      const response = await fetchLibraryContext(args.libraryId, args.query);
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: response.data,
-          },
-        ],
-      };
-    } else {
-      throw new Error(`Unknown tool: ${name}`);
-    }
-  } catch (error) {
-    const sanitizedArgs = args ? JSON.stringify(args).replace(/"(api[_-]?key|token|password|secret|authorization)"\s*:\s*"[^"]*"/gi, '"$1":"[REDACTED]"') : undefined;
-    logMessage(server, "error", `Tool execution error: ${error instanceof Error ? error.message : String(error)}`, { 
-      tool: name, 
-      args: sanitizedArgs ? JSON.parse(sanitizedArgs) : args,
-      error: error instanceof Error ? error.stack : String(error)
-    });
-    throw error;
-  }
+  return handleToolCall(server, researchServer, name, args);
 });
 
 // Logging level handler
@@ -252,13 +140,12 @@ async function main() {
     }
 
     console.log(`Starting HTTP transport on port ${port}`);
-    const app = await createHttpServer(server, { researchServer });
+    const app = await createHttpServer(server);
     
     const httpServer = app.listen(port, () => {
       console.log(`HTTP server listening on port ${port}`);
       console.log(`Health check: http://localhost:${port}/health`);
       console.log(`MCP endpoint: http://localhost:${port}/mcp`);
-      console.log(`API endpoints: http://localhost:${port}/api`);
     });
 
     // Handle graceful shutdown

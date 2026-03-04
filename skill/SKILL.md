@@ -1,10 +1,30 @@
 ---
 name: "performing-searches"
 description: "Provides concurrent web search and code search capabilities for Agents with hybrid retrieval. Supports searching multiple keywords simultaneously, Embedding re-ranking to improve relevance to ~80%. Use when users need to search the web, look up programming documentation, or mention SearXNG, MCP search, or local search."
-version: "1.1.1"
+version: "1.1.2"
 author: "sebrinass"
 tags: ["search", "mcp", "searxng", "agent", "local"]
 category: "search"
+env:
+  required:
+    - name: "SEARXNG_URL"
+      description: "SearXNG 实例地址"
+      example: "http://localhost:8080"
+  optional:
+    - name: "EMBEDDING_API_KEY"
+      description: "Embedding API 密钥（启用混合检索）"
+    - name: "EMBEDDING_BASE_URL"
+      description: "Embedding API 端点（OpenAI 兼容）"
+    - name: "MCP_HTTP_PORT"
+      description: "HTTP 模式端口"
+      default: "3000"
+    - name: "SEARCH_TIMEOUT_MS"
+      description: "搜索超时（毫秒）"
+      default: "30000"
+    - name: "CONTEXT7_API_KEY"
+      description: "Context7 API Key（代码搜索）"
+source: "https://github.com/sebrinass/mcp-augmented-search"
+homepage: "https://github.com/sebrinass/mcp-augmented-search"
 ---
 
 # Augmented Search
