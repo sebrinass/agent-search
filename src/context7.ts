@@ -36,7 +36,7 @@ export interface ContextResponse {
 
 // ============== 常量 ==============
 
-const CONTEXT7_API_BASE_URL = CONTEXT7_API_URL || "https://context7.com/api";
+const CONTEXT7_API_BASE_URL = CONTEXT7_API_URL || "https://api.context7.com/v1";
 
 // ============== 错误处理 ==============
 

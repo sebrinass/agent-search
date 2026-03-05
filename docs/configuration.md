@@ -266,40 +266,40 @@ ALLOWED_ORIGINS=localhost:3000,example.com
 链接去重缓存 TTL（秒）。
 
 ```bash
-LINK_DEDUP_TTL=60
+LINK_DEDUP_TTL=86400
 ```
 
-**默认值：** `60`
+**默认值：** `86400`（24 小时）
 
 ### URL_CACHE_TTL
 
 URL 内容缓存 TTL（秒）。
 
 ```bash
-URL_CACHE_TTL=60
+URL_CACHE_TTL=3600
 ```
 
-**默认值：** `60`
+**默认值：** `3600`（1 小时）
 
 ### URL_CACHE_SIZE
 
 URL 缓存最大条目数。
 
 ```bash
-URL_CACHE_SIZE=200
+URL_CACHE_SIZE=100
 ```
 
-**默认值：** `200`
+**默认值：** `100`
 
 ### EMBEDDING_CACHE_SIZE
 
 Embedding 缓存最大条目数。
 
 ```bash
-EMBEDDING_CACHE_SIZE=500
+EMBEDDING_CACHE_SIZE=1000
 ```
 
-**默认值：** `500`
+**默认值：** `1000`
 
 ---
 
@@ -318,10 +318,10 @@ CONTEXT7_API_KEY=your-api-key
 Context7 API 地址。
 
 ```bash
-CONTEXT7_API_URL=https://context7.com/api
+CONTEXT7_API_URL=https://api.context7.com/v1
 ```
 
-**默认值：** `https://context7.com/api`
+**默认值：** `https://api.context7.com/v1`
 
 ---
 
