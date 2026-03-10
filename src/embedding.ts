@@ -22,7 +22,8 @@ import {
   TOP_K,
   RRF_K,
   isEmbeddingEnabled,
-  getEmbeddingConfig
+  getEmbeddingConfig,
+  EMBEDDING_TIMEOUT_MS
 } from './config.js';
 import { logMessage } from './logging.js';
 
@@ -141,6 +142,9 @@ async function getOpenAIEmbedding(text: string): Promise<number[]> {
   }
 
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), EMBEDDING_TIMEOUT_MS);
+    
     const response = await fetch(endpoint, {
       method: 'POST',
       headers,
@@ -148,7 +152,10 @@ async function getOpenAIEmbedding(text: string): Promise<number[]> {
         model: EMBEDDING_MODEL,
         input: text,
       }),
+      signal: controller.signal,
     });
+    
+    clearTimeout(timeoutId);
     
     if (!response.ok) {
       const errorText = await response.text();
@@ -171,6 +178,10 @@ async function getOpenAIEmbedding(text: string): Promise<number[]> {
     
     return embedding;
   } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      logMessage(null, 'warning', `⚠️ 嵌入模型超时(${EMBEDDING_TIMEOUT_MS}ms)，已降级为纯文本检索`);
+      return [];
+    }
     logMessage(null, 'error', `Error getting embedding: ${error instanceof Error ? error.message : String(error)}`);
     return [];
   }

@@ -114,8 +114,9 @@ SEARXNG_URL=http://localhost:8080 augmented-search
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `EMBEDDING_BASE_URL` | - | Embedding API 端点（启用混合检索） |
+| `EMBEDDING_TIMEOUT_MS` | 30000 | 嵌入模型超时（毫秒），超时后降级为纯文本检索 |
 | `MCP_HTTP_PORT` | - | HTTP 模式端口 |
-| `SEARCH_TIMEOUT_MS` | 30000 | 搜索超时（毫秒） |
+| `SEARCH_TIMEOUT_MS` | EMBEDDING_TIMEOUT + 10s | 搜索超时（毫秒） |
 
 完整配置请参阅 [docs/configuration.md](docs/configuration.md)。
 

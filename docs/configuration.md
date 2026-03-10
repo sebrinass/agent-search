@@ -83,6 +83,20 @@ TOP_K=5
 
 **默认值：** `5`
 
+### EMBEDDING_TIMEOUT_MS
+
+嵌入模型超时时间（毫秒）。超时后自动降级为纯文本检索（BM25）。
+
+```bash
+EMBEDDING_TIMEOUT_MS=30000
+```
+
+**默认值：** `30000`（30 秒）
+
+**说明：**
+- 搜索超时会自动设置为 `EMBEDDING_TIMEOUT_MS + 10000`，确保降级后有足够时间完成检索
+- 嵌入模型响应慢时，超时后会输出日志提示并降级为纯文本检索
+
 ---
 
 ## 搜索控制配置（可选）
@@ -112,14 +126,14 @@ SEARCH_ENGINES=google,baidu,bing
 MCP 搜索工具超时时间（毫秒）。
 
 ```bash
-SEARCH_TIMEOUT_MS=30000
+SEARCH_TIMEOUT_MS=40000
 ```
 
-**默认值：** `30000`（30 秒）
+**默认值：** `EMBEDDING_TIMEOUT_MS + 10000`（嵌入超时 + 10 秒缓冲）
 
-**建议：**
-- 纯文本模式：10-15 秒
-- 混合检索模式：30-60 秒
+**说明：**
+- 默认自动计算，确保嵌入降级后有足够时间完成纯文本检索
+- 如需手动设置，建议大于 `EMBEDDING_TIMEOUT_MS` 至少 10 秒
 
 ### SEARCH_LANGUAGE
 
@@ -363,6 +377,7 @@ SEARXNG_URL=http://localhost:8080
 # 混合检索
 EMBEDDING_BASE_URL=http://localhost:11434
 EMBEDDING_MODEL=nomic-embed-text
+EMBEDDING_TIMEOUT_MS=30000
 TOP_K=5
 
 # HTTP 模式
@@ -372,7 +387,6 @@ AUTH_PASSWORD=secret
 
 # 搜索控制
 SEARCH_PAGES=3
-SEARCH_TIMEOUT_MS=60000
 ```
 
 ### Docker Compose 配置
@@ -384,6 +398,7 @@ services:
     environment:
       - SEARXNG_URL=http://searxng:8080
       - EMBEDDING_BASE_URL=http://host.docker.internal:11434
+      - EMBEDDING_TIMEOUT_MS=30000
       - MCP_HTTP_PORT=3000
 ```
 
@@ -391,12 +406,12 @@ services:
 
 ## 性能参考
 
-| 模式 | SEARCH_PAGES | SEARCH_TIMEOUT_MS | 相关性 |
-|------|--------------|-------------------|--------|
-| 纯文本 | 1 | 10000-15000 | ~50% |
-| 混合检索 | 3 | 30000-60000 | ~80% |
+| 模式 | SEARCH_PAGES | EMBEDDING_TIMEOUT_MS | 相关性 |
+|------|--------------|---------------------|--------|
+| 纯文本 | 1 | - | ~50% |
+| 混合检索 | 3 | 30000 | ~80% |
 
 **优化建议：**
 - 搜索关键词并发不超过 3 个
 - 在 SearXNG 配置中过滤视频网站以提升结果质量
-- 确保 SearXNG 超时小于 MCP 超时 5-10 秒
+- 嵌入模型响应慢时，可适当增大 `EMBEDDING_TIMEOUT_MS`

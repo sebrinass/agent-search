@@ -9,11 +9,14 @@ export const EMBEDDING_BASE_URL = process.env.EMBEDDING_BASE_URL || process.env.
 export const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || 'nomic-embed-text';
 export const isEmbeddingEnabled = !!(EMBEDDING_API_KEY || EMBEDDING_BASE_URL);
 
+// ============ 嵌入超时配置 ============
+export const EMBEDDING_TIMEOUT_MS = parseInt(process.env.EMBEDDING_TIMEOUT_MS || '30000', 10);
+
 // ============ 搜索相关配置 ============
 export const DEFAULT_SEARCH_PAGES = isEmbeddingEnabled ? 3 : 1;
 export const SEARCH_PAGES = parseInt(process.env.SEARCH_PAGES || String(DEFAULT_SEARCH_PAGES), 10);
 export const SEARCH_ENGINES = process.env.SEARCH_ENGINES || '';
-export const SEARCH_TIMEOUT_MS = parseInt(process.env.SEARCH_TIMEOUT_MS || '30000', 10);
+export const SEARCH_TIMEOUT_MS = parseInt(process.env.SEARCH_TIMEOUT_MS || String(EMBEDDING_TIMEOUT_MS + 10000), 10);
 export const SEARCH_LANGUAGE = process.env.SEARCH_LANGUAGE || 'all';
 export const SAFE_SEARCH = parseInt(process.env.SAFE_SEARCH || '0', 10);
 
@@ -64,6 +67,7 @@ export function getEmbeddingConfig() {
     enabled: isEmbeddingEnabled,
     baseUrl: EMBEDDING_BASE_URL || 'not configured',
     model: EMBEDDING_MODEL,
+    timeoutMs: EMBEDDING_TIMEOUT_MS,
     topK: TOP_K,
     rrfK: RRF_K
   };
