@@ -360,7 +360,7 @@ TOP_K=5
 # HTTP 模式
 MCP_HTTP_PORT=3000
 AUTH_USERNAME=admin
-AUTH_PASSWORD=secret
+AUTH_PASSWORD=your-secret-password
 
 # 搜索控制
 SEARCH_PAGES=3

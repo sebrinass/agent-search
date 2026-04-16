@@ -47,8 +47,8 @@ docker run -d --name agent-search -p 3000:3000 \
 ### 方式二：npm
 
 ```bash
-npm install -g agent-search
-SEARXNG_URL=http://localhost:8080 agent-search
+npm install -g agent-local-search
+agent-search
 ```
 
 ### 方式三：Agent 一键添加

@@ -1,5 +1,5 @@
 {
-  "name": "agent-search",
+  "name": "agent-local-search",
   "version": "0.1.0",
   "description": "为 Agent 提供的本地联网搜索工具，支持 CLI 和 MCP 模式",
   "license": "MIT",
