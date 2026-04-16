@@ -1,10 +1,69 @@
 ---
 name: "performing-searches"
-description: "Provides concurrent web search and code search capabilities for Agents with hybrid retrieval. Supports searching multiple keywords simultaneously, Embedding re-ranking to improve relevance to ~80%. Use when users need to search the web, look up programming documentation, or mention SearXNG, MCP search, or local search."
-version: "1.1.3"
+description: "Provides concurrent web search capabilities for Agents with hybrid retrieval. Supports searching multiple keywords simultaneously, Embedding re-ranking to improve relevance to ~80%. Use when users need to search the web, look up information, or mention SearXNG, MCP search, or local search."
+version: "0.1.0"
 author: "sebrinass"
 tags: ["search", "mcp", "searxng", "agent", "local"]
 category: "search"
+tools:
+  - name: search
+    description: "并发搜索工具，支持多关键词并发搜索、站点/时间/语言过滤，以及 fast/embedding 两种搜索模式"
+    inputSchema:
+      type: "object"
+      properties:
+        searchedKeywords:
+          type: "array"
+          items:
+            type: "string"
+          minItems: 1
+          maxItems: 3
+          description: "搜索关键词列表（最多3个并发）"
+        mode:
+          type: "string"
+          enum: ["fast", "embedding"]
+          default: "fast"
+          description: "搜索模式：fast=快速搜索(默认)，embedding=精准搜索(需配置嵌入模型)"
+        site:
+          type: "string"
+          description: "限制搜索范围到具体网站域名"
+        time_range:
+          type: "string"
+          enum: ["day", "month", "year"]
+          description: "时间范围过滤：day=最近一天，month=最近一月，year=最近一年"
+        lang:
+          type: "string"
+          description: "搜索语言（如 en, zh, all）"
+        safeSearch:
+          type: "number"
+          enum: [0, 1, 2]
+          description: "安全搜索级别：0=关闭，1=中等，2=严格"
+      required: ["searchedKeywords"]
+  - name: read
+    description: "读取 URL 内容，支持 JS 渲染降级和正文提取"
+    inputSchema:
+      type: "object"
+      properties:
+        urls:
+          type: "array"
+          items:
+            type: "string"
+          description: "URL 数组（支持批量读取）"
+        startChar:
+          type: "number"
+          description: "起始字符位置（默认 0）"
+        maxLength:
+          type: "number"
+          description: "最大读取字符数"
+        section:
+          type: "string"
+          description: "提取指定章节"
+        paragraphRange:
+          type: "string"
+          description: "段落范围（如 1-5, 3, 10-）"
+        readHeadings:
+          type: "boolean"
+          description: "仅返回标题列表"
+      required: ["urls"]
 env:
   required:
     - name: "SEARXNG_URL"
@@ -18,11 +77,6 @@ env:
     - name: "EMBEDDING_MODEL"
       description: "嵌入模型名称"
       default: "nomic-embed-text"
-    - name: "CONTEXT7_API_KEY"
-      description: "Context7 API Key（代码搜索）"
-    - name: "CONTEXT7_API_URL"
-      description: "Context7 API 地址"
-      default: "https://api.context7.com/v1"
     - name: "MCP_HTTP_PORT"
       description: "HTTP 模式端口"
       default: "3000"
@@ -32,10 +86,10 @@ env:
       description: "Basic Auth 密码"
     - name: "SEARCH_TIMEOUT_MS"
       description: "搜索超时（毫秒）"
-      default: "30000"
+      default: "100000"
     - name: "SEARCH_PAGES"
       description: "搜索页数"
-      default: "1（混合检索时为3）"
+      default: "1"
     - name: "SEARCH_ENGINES"
       description: "指定搜索引擎（逗号分隔）"
     - name: "SEARCH_LANGUAGE"
@@ -45,13 +99,13 @@ env:
       description: "HTTP 代理地址"
     - name: "HTTPS_PROXY"
       description: "HTTPS 代理地址"
-source: "https://github.com/sebrinass/mcp-augmented-search"
-homepage: "https://github.com/sebrinass/mcp-augmented-search"
+source: "https://github.com/sebrinass/agent-search"
+homepage: "https://github.com/sebrinass/agent-search"
 ---
 
-# Augmented Search
+# Agent Search
 
-为 Agent 提供高效的本地联网搜索和代码搜索能力。
+为 Agent 提供高效的本地联网搜索能力。
 
 ## 快速开始
 
@@ -61,33 +115,35 @@ homepage: "https://github.com/sebrinass/mcp-augmented-search"
 
 ```bash
 docker run -d --name searxng -p 8080:8080 searxng/searxng:latest
-docker run -d --name augmented-search -p 3000:3000 \
+docker run -d --name agent-search -p 3000:3000 \
   -e SEARXNG_URL=http://host.docker.internal:8080 \
-  ghcr.io/sebrinass/mcp-augmented-search:latest
+  ghcr.io/sebrinass/agent-search:latest
 ```
 
 **npm 方式**:
 
 ```bash
-npm install -g augmented-search
-SEARXNG_URL=http://localhost:8080 augmented-search
+npm install -g agent-search
+SEARXNG_URL=http://localhost:8080 agent-search
 ```
 
 ## 提供的工具
 
-### search — 思考 + 并发搜索
+### search — 并发搜索
 
 支持混合检索和链接去重，一次请求最多搜索 3 个关键词。
 
 **必填参数：**
-- `thought` — 当前思考内容
-- `thoughtNumber` — 当前思考步骤编号
-- `totalThoughts` — 预计总思考步骤数
-- `nextThoughtNeeded` — 是否需要继续思考
+- `searchedKeywords` — 搜索关键词列表（最多 3 个并发）
 
 **可选参数：**
-- `searchedKeywords` — 搜索关键词列表（最多 3 个并发）
+- `mode` — 搜索模式，`fast`=快速搜索(默认)，`embedding`=精准搜索(需配置嵌入模型)
 - `site` — 限制搜索域名
+- `time_range` — 时间范围过滤（day, month, year）
+- `lang` — 搜索语言（如 en, zh, all）
+- `safeSearch` — 安全搜索级别（0=关闭，1=中等，2=严格）
+
+**使用建议：** 一般问题或简单搜索用 `fast` 模式（默认），需要深度搜索时可启用 `embedding` 模式。
 
 ### read — URL 内容提取
 
@@ -99,22 +155,6 @@ SEARXNG_URL=http://localhost:8080 augmented-search
 - `section` — 提取指定章节
 - `paragraphRange` — 段落范围
 - `readHeadings` — 仅返回标题列表
-
-### library_search — 搜索编程库
-
-搜索编程库，获取 Context7 兼容的库 ID。
-
-**参数：**
-- `query` — 用户问题（用于相关性排序）
-- `libraryName` — 库名，如 `react`
-
-### library_docs — 查询库文档
-
-查询库的文档和代码示例。
-
-**参数：**
-- `libraryId` — 库 ID，如 `/facebook/react`
-- `query` — 用户问题
 
 ## 配置
 
@@ -130,9 +170,9 @@ SEARXNG_URL=http://localhost:8080 augmented-search
 |------|--------|------|
 | `EMBEDDING_BASE_URL` | - | Embedding API 端点（启用混合检索） |
 | `MCP_HTTP_PORT` | - | HTTP 模式端口 |
-| `SEARCH_TIMEOUT_MS` | 30000 | 搜索超时（毫秒） |
+| `SEARCH_TIMEOUT_MS` | 100000 | 搜索超时（毫秒） |
 
-完整配置请参阅 [GitHub 仓库配置文档](https://github.com/sebrinass/mcp-augmented-search/blob/main/docs/configuration.md)。
+完整配置请参阅 [GitHub 仓库配置文档](https://github.com/sebrinass/agent-search/blob/main/docs/configuration.md)。
 
 ## 性能建议
 
@@ -155,47 +195,16 @@ mcporter list http://localhost:3000/mcp
 
 # 调用搜索
 mcporter call http://localhost:3000/mcp.search \
-  thought="搜索测试" \
-  thoughtNumber=1 \
-  totalThoughts=1 \
-  nextThoughtNeeded=false \
   searchedKeywords='["hello world"]'
 
 # 调用 URL 读取
 mcporter call http://localhost:3000/mcp.read \
   urls='["https://example.com"]'
-
-# 调用代码库搜索
-mcporter call http://localhost:3000/mcp.library_search \
-  query="如何使用 React hooks" \
-  libraryName="react"
-
-# 调用代码文档查询
-mcporter call http://localhost:3000/mcp.library_docs \
-  libraryId="/facebook/react" \
-  query="useEffect cleanup"
-```
-
-### 使用 REST API
-
-```bash
-# 健康检查
-curl http://localhost:3000/health
-
-# 搜索
-curl -X POST http://localhost:3000/api/search \
-  -H "Content-Type: application/json" \
-  -d '{"thought":"测试","thoughtNumber":1,"totalThoughts":1,"nextThoughtNeeded":false,"searchedKeywords":["hello"]}'
-
-# 读取 URL
-curl -X POST http://localhost:3000/api/read \
-  -H "Content-Type: application/json" \
-  -d '{"urls":["https://example.com"]}'
 ```
 
 ## 详细安装
 
-完整安装指南请参阅 [GitHub 安装文档](https://github.com/sebrinass/mcp-augmented-search/blob/main/skill/reference/installation.md)，包含：
+完整安装指南请参阅 [GitHub 安装文档](https://github.com/sebrinass/agent-search/blob/main/skill/reference/installation.md)，包含：
 - Docker 完整安装
 - npm + 已有 SearXNG
 - SearXNG 配置详解
@@ -204,8 +213,8 @@ curl -X POST http://localhost:3000/api/read \
 
 ## 资源链接
 
-- [安装指南](https://github.com/sebrinass/mcp-augmented-search/blob/main/skill/reference/installation.md) — 完整安装说明
-- [配置参考](https://github.com/sebrinass/mcp-augmented-search/blob/main/docs/configuration.md) — 完整环境变量说明
-- [GitHub 仓库](https://github.com/sebrinass/mcp-augmented-search)
+- [安装指南](https://github.com/sebrinass/agent-search/blob/main/skill/reference/installation.md) — 完整安装说明
+- [配置参考](https://github.com/sebrinass/agent-search/blob/main/docs/configuration.md) — 完整环境变量说明
+- [GitHub 仓库](https://github.com/sebrinass/agent-search)
 - [SearXNG 文档](https://docs.searxng.org)
-- [Docker 镜像](https://ghcr.io/sebrinass/mcp-augmented-search)
+- [Docker 镜像](https://ghcr.io/sebrinass/agent-search)

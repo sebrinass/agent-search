@@ -1,17 +1,17 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { READ_URL_TOOL, isWebUrlReadArgs } from "./types.js";
-import { logMessage } from "./logging.js";
-import { fetchAndConvertToMarkdown, PaginationOptions } from "./url-reader.js";
-import { ResearchServer, ThoughtData } from "./research.js";
 import {
-  CODE_RESOLVE_TOOL,
-  CODE_QUERY_TOOL,
-  searchLibraries,
-  fetchLibraryContext,
-  formatSearchResults,
-  isCodeResolveArgs,
-  isCodeQueryArgs,
-} from "./context7.js";
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+  SetLevelRequestSchema,
+  ListResourcesRequestSchema,
+  ReadResourceRequestSchema,
+  LoggingLevel,
+} from "@modelcontextprotocol/sdk/types.js";
+import { READ_URL_TOOL, isWebUrlReadArgs } from "./types.js";
+import { logMessage, setLogLevel } from "./logging.js";
+import { fetchAndConvertToMarkdown, PaginationOptions } from "./url-reader.js";
+import { ResearchServer, SearchInput, SEARCH_TOOL } from "./research.js";
+import { createConfigResource, createHelpResource } from "./resources.js";
 import { FETCH_TIMEOUT_MS } from "./config.js";
 
 export interface ToolHandlerDeps {
@@ -19,8 +19,88 @@ export interface ToolHandlerDeps {
   researchServer: ResearchServer;
 }
 
+/**
+ * 向 MCP Server 注册所有请求处理器（工具列表、工具调用、日志级别、资源列表、资源读取）。
+ * 集中管理，避免在 mcp-main.ts / http-server.ts 中重复定义。
+ */
+export function registerRequestHandlers(server: Server, researchServer: ResearchServer): void {
+  let currentLogLevel: LoggingLevel = "info";
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    logMessage(server, "debug", "Handling list_tools request");
+    return {
+      tools: [SEARCH_TOOL, ...getToolDefinitions()],
+    };
+  });
+
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const { name, arguments: args } = request.params;
+    return handleToolCall(server, researchServer, name, args);
+  });
+
+  server.setRequestHandler(SetLevelRequestSchema, async (request) => {
+    const { level } = request.params;
+    logMessage(server, "info", `Setting log level to: ${level}`);
+    currentLogLevel = level;
+    setLogLevel(level);
+    return {};
+  });
+
+  server.setRequestHandler(ListResourcesRequestSchema, async () => {
+    logMessage(server, "debug", "Handling list_resources request");
+    return {
+      resources: [
+        {
+          uri: "config://server-config",
+          mimeType: "application/json",
+          name: "Server Configuration",
+          description: "Current server configuration and environment variables"
+        },
+        {
+          uri: "help://usage-guide",
+          mimeType: "text/markdown",
+          name: "Usage Guide",
+          description: "How to use the Augmented Search server effectively"
+        }
+      ]
+    };
+  });
+
+  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    const { uri } = request.params;
+    logMessage(server, "debug", `Handling read_resource request for: ${uri}`);
+
+    switch (uri) {
+      case "config://server-config":
+        return {
+          contents: [
+            {
+              uri: uri,
+              mimeType: "application/json",
+              text: createConfigResource()
+            }
+          ]
+        };
+
+      case "help://usage-guide":
+        return {
+          contents: [
+            {
+              uri: uri,
+              mimeType: "text/markdown",
+              text: createHelpResource()
+            }
+          ]
+        };
+
+      default:
+        throw new Error(`Unknown resource: ${uri}`);
+    }
+  });
+}
+
 export function getToolDefinitions() {
-  return [READ_URL_TOOL, CODE_RESOLVE_TOOL, CODE_QUERY_TOOL];
+  return [READ_URL_TOOL];
 }
 
 export async function handleReadTool(
@@ -34,7 +114,7 @@ export async function handleReadTool(
 
   const paginationOptions: PaginationOptions = {
     startChar: typeof args.startChar === 'number' ? args.startChar : 0,
-    maxLength: typeof args.maxLength === 'number' ? args.maxLength : undefined,
+    maxLength: typeof args.maxLength === 'number' ? args.maxLength : 2000,
     section: typeof args.section === 'string' ? args.section : undefined,
     paragraphRange: typeof args.paragraphRange === 'string' ? args.paragraphRange : undefined,
     readHeadings: args.readHeadings === true,
@@ -61,48 +141,23 @@ export async function handleSearchTool(
   researchServer: ResearchServer,
   args: unknown
 ): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
-  const result = await researchServer.processThought(args as unknown as ThoughtData);
+  const typedArgs = args as Record<string, unknown>;
+  const searchInput: SearchInput = {
+    searchedKeywords: typedArgs.searchedKeywords as string[] | undefined,
+    site: typedArgs.site as string | undefined,
+    time_range: typedArgs.time_range as string | undefined,
+    lang: typedArgs.lang as string | undefined,
+    safeSearch: typedArgs.safeSearch as number | undefined,
+    mode: typedArgs.mode as 'fast' | 'embedding' | undefined,
+  };
+
+  const result = await researchServer.processSearch(searchInput);
 
   if (result.isError) {
     throw new Error("Search tool execution failed");
   }
 
   return result;
-}
-
-export async function handleLibrarySearchTool(
-  args: unknown
-): Promise<{ content: Array<{ type: "text"; text: string }> }> {
-  if (!isCodeResolveArgs(args)) {
-    throw new Error("Invalid arguments for library_search");
-  }
-
-  const searchResponse = await searchLibraries(args.query, args.libraryName);
-
-  if (!searchResponse.results || searchResponse.results.length === 0) {
-    return {
-      content: [{ type: "text", text: searchResponse.error || "No libraries found matching the provided name." }],
-    };
-  }
-
-  const resultsText = formatSearchResults(searchResponse);
-  return {
-    content: [{ type: "text", text: `Available Libraries:\n\n${resultsText}` }],
-  };
-}
-
-export async function handleLibraryDocsTool(
-  args: unknown
-): Promise<{ content: Array<{ type: "text"; text: string }> }> {
-  if (!isCodeQueryArgs(args)) {
-    throw new Error("Invalid arguments for library_docs");
-  }
-
-  const response = await fetchLibraryContext(args.libraryId, args.query);
-
-  return {
-    content: [{ type: "text", text: response.data }],
-  };
 }
 
 export async function handleToolCall(
@@ -120,12 +175,6 @@ export async function handleToolCall(
 
       case "search":
         return await handleSearchTool(researchServer, args);
-
-      case "library_search":
-        return await handleLibrarySearchTool(args);
-
-      case "library_docs":
-        return await handleLibraryDocsTool(args);
 
       default:
         throw new Error(`Unknown tool: ${toolName}`);

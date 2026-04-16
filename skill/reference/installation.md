@@ -1,6 +1,6 @@
 # 安装指南
 
-augmented-search 与 SearXNG 的完整安装指南。
+agent-search 与 SearXNG 的完整安装指南。
 
 ## 概览
 
@@ -36,7 +36,7 @@ augmented-search 与 SearXNG 的完整安装指南。
 ### 步骤 1：创建目录
 
 ```bash
-mkdir -p ~/augmented-search && cd ~/augmented-search
+mkdir -p ~/agent-search && cd ~/agent-search
 ```
 
 ### 步骤 2：创建 docker-compose.yml
@@ -54,9 +54,9 @@ services:
       - SEARXNG_BASE_URL=http://localhost:8080/
     restart: unless-stopped
 
-  augmented-search:
-    image: ghcr.io/sebrinass/mcp-augmented-search:latest
-    container_name: augmented-search
+  agent-search:
+    image: ghcr.io/sebrinass/agent-search:latest
+    container_name: agent-search
     ports:
       - "3000:3000"
     environment:
@@ -93,7 +93,7 @@ curl http://localhost:3000/health
 ### 步骤 1：安装
 
 ```bash
-npm install -g augmented-search
+npm install -g agent-search
 ```
 
 ### 步骤 2：配置环境变量
@@ -109,7 +109,7 @@ $env:SEARXNG_URL = "http://your-searxng:8080"
 ### 步骤 3：运行
 
 ```bash
-augmented-search
+agent-search
 ```
 
 ### 步骤 4：验证
@@ -122,7 +122,7 @@ curl http://localhost:3000/health
 
 ## 使用公共 SearXNG（不推荐）
 
-⚠️ 隐私警告：公共实例可以看到你的搜索查询。
+隐私警告：公共实例可以看到你的搜索查询。
 
 可用实例：
 - https://searx.be
@@ -131,7 +131,7 @@ curl http://localhost:3000/health
 - https://searx.fmac.xyz
 
 ```bash
-SEARXNG_URL="https://searx.be" augmented-search
+SEARXNG_URL="https://searx.be" agent-search
 ```
 
 ---
@@ -225,12 +225,12 @@ OpenClaw 使用 `mcporter` 作为 MCP 客户端。
 
 ### HTTP 模式（推荐）
 
-1. 启动 augmented-search HTTP 服务：
+1. 启动 agent-search HTTP 服务：
 
 ```bash
 export MCP_HTTP_PORT=3000
 export SEARXNG_URL=http://localhost:8080
-augmented-search
+agent-search
 ```
 
 2. 配置 mcporter，添加到 `./config/mcporter.json`：
@@ -238,7 +238,7 @@ augmented-search
 ```json
 {
   "servers": {
-    "augmented-search": {
+    "agent-search": {
       "url": "http://localhost:3000/mcp"
     }
   }
@@ -249,10 +249,10 @@ augmented-search
 
 ```bash
 # 使用 npx
-mcporter call --stdio "npx augmented-search" search ...
+mcporter call --stdio "npx agent-search" search ...
 
 # 使用 Docker
-mcporter call --stdio "docker run -i --rm -e SEARXNG_URL ghcr.io/sebrinass/mcp-augmented-search:latest" search ...
+mcporter call --stdio "docker run -i --rm -e SEARXNG_URL ghcr.io/sebrinass/agent-search:latest" search ...
 ```
 
 **工具使用示例请参阅 [SKILL.md](../SKILL.md#工具使用示例)**
@@ -273,7 +273,7 @@ docker logs searxng
 # 3. 卷权限问题
 ```
 
-### augmented-search 连接失败
+### agent-search 连接失败
 
 ```bash
 # 检查 SearXNG 地址是否正确
@@ -301,9 +301,9 @@ outgoing:
   max_request_timeout: 15.0
 ```
 
-**重要**：SearXNG 超时必须小于 augmented-search search工具 超时 5-10 秒（嵌入模型需要视情况增加），否则可能导致结果返回为空。
+**重要**：SearXNG 超时必须小于 agent-search search工具 超时 5-10 秒（嵌入模型需要视情况增加），否则可能导致结果返回为空。
 
-MCP 超时配置（augmented-search 环境变量）：
+MCP 超时配置（agent-search 环境变量）：
 ```bash
 SEARCH_TIMEOUT_MS=30000  # 默认 30 秒
 ```

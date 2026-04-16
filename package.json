@@ -1,16 +1,16 @@
 {
-  "name": "augmented-search",
-  "version": "1.1.4",
-  "description": "增强型 MCP 搜索服务器，集成混合检索、代码文档搜索等功能",
+  "name": "agent-search",
+  "version": "0.1.0",
+  "description": "为 Agent 提供的本地联网搜索工具，支持 CLI 和 MCP 模式",
   "license": "MIT",
-  "author": "Based on mcp-searxng by Ihor Sokoliuk",
+  "author": "sebrinass",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sebrinass/mcp-augmented-search.git"
+    "url": "git+https://github.com/sebrinass/agent-search.git"
   },
-  "homepage": "https://github.com/sebrinass/mcp-augmented-search#readme",
+  "homepage": "https://github.com/sebrinass/agent-search#readme",
   "bugs": {
-    "url": "https://github.com/sebrinass/mcp-augmented-search/issues"
+    "url": "https://github.com/sebrinass/agent-search/issues"
   },
   "keywords": [
     "mcp",
@@ -22,13 +22,11 @@
     "web-search",
     "claude",
     "ai",
-    "hybrid-search",
-    "context7",
-    "code-search"
+    "hybrid-search"
   ],
   "type": "module",
   "bin": {
-    "augmented-search": "dist/index.js"
+    "agent-search": "dist/cli/program.js"
   },
   "main": "dist/index.js",
   "files": [
@@ -38,29 +36,28 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsc && shx chmod +x dist/*.js",
+    "build": "tsc && shx chmod +x dist/*.js dist/**/*.js",
     "watch": "tsc --watch",
-    "test": "cross-env SEARXNG_URL=https://test-searx.example.com tsx __tests__/run-all.ts",
-    "test:coverage": "cross-env SEARXNG_URL=https://test-searx.example.com c8 --reporter=text tsx __tests__/run-all.ts",
+    "test": "cross-env SEARXNG_URL=https://test-searx.example.com tsx --no-cache __tests__/run-all.ts",
+    "test:coverage": "cross-env SEARXNG_URL=https://test-searx.example.com tsx --no-cache __tests__/run-all.ts",
     "bootstrap": "npm install && npm run build",
     "inspector": "cross-env DANGEROUSLY_OMIT_AUTH=true npx @modelcontextprotocol/inspector node dist/index.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@mozilla/readability": "^0.6.0",
-    "@types/cors": "^2.8.19",
-    "@types/express": "^5.0.3",
+    "commander": "^14.0.3",
     "cors": "^2.8.5",
     "express": "^5.1.0",
     "happy-dom": "^20.8.3",
-    "jsdom": "^26.0.0",
     "minisearch": "^7.2.0",
     "node-html-markdown": "^1.3.0",
     "quick-lru": "^7.3.0",
     "undici": "^6.20.1"
   },
   "devDependencies": {
-    "@types/jsdom": "^28.0.0",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
     "@types/node": "^22.17.2",
     "@types/supertest": "^6.0.3",
     "c8": "^10.1.3",

@@ -30,14 +30,8 @@ async function runTests() {
     assert.notEqual(unknownToolRequest.name, 'search');
     assert.notEqual(unknownToolRequest.name, 'read');
 
-    // Simulate error response
     try {
-      if (unknownToolRequest.name !== 'search' &&
-          unknownToolRequest.name !== 'read' &&
-          unknownToolRequest.name !== 'library_search' &&
-          unknownToolRequest.name !== 'library_docs') {
-        throw new Error(`Unknown tool: ${unknownToolRequest.name}`);
-      }
+      throw new Error(`Unknown tool: ${unknownToolRequest.name}`);
     } catch (error) {
       assert.ok(error instanceof Error);
       assert.ok(error.message.includes('Unknown tool'));

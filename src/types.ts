@@ -17,7 +17,14 @@ export interface SearXNGWeb {
 
 export const READ_URL_TOOL: Tool = {
   name: "read",
-  description: "读取 URL 的内容",
+  description: `读取 URL 内容
+
+功能：
+1. 多URL批量读取
+2. 分页读取长文章（startChar + maxLength）
+3. 按章节提取（section）
+4. 按段落范围提取（paragraphRange）
+5. 仅获取标题大纲（readHeadings）`,
   inputSchema: {
     type: "object",
     properties: {
@@ -34,7 +41,7 @@ export const READ_URL_TOOL: Tool = {
       },
       maxLength: {
         type: "number",
-        description: "Maximum number of characters to return per URL",
+        description: "Maximum number of characters to return per URL (default: 2000). Use with startChar for progressive reading of long articles.",
         minimum: 1,
       },
       section: {

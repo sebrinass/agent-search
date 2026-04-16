@@ -1,8 +1,8 @@
-# 🔍 Augmented Search
+# Agent Search
 
-[![MCP Badge](https://lobehub.com/badge/mcp/sebrinass-mcp-augmented-search)](https://lobehub.com/mcp/sebrinass-mcp-augmented-search)
 
-为 Agent 提供高效的本地联网搜索和代码搜索能力。支持并发检索多个关键词，通过 Embedding 重排序将相关性，大幅减少搜索轮次和上下文消耗。
+
+为 Agent 提供高效的本地联网搜索能力。支持并发检索多个关键词，通过 Embedding 重排序将相关性，大幅减少搜索轮次和上下文消耗。
 
 ## 这能帮你做什么？
 
@@ -10,13 +10,11 @@
 
 > "帮我调研一下 2024 年 RAG 技术的最新进展"
 
-传统方式需要多轮搜索、逐个打开链接。augmented-search 一次并发搜索多个关键词，自动重排序返回最相关结果。
+传统方式需要多轮搜索、逐个打开链接。agent-search 一次并发搜索多个关键词，自动重排序返回最相关结果。
 
-**场景二：查阅编程文档**
+**场景二：快速查阅资料**
 
-> "React useEffect 的 cleanup 函数怎么用？"
-
-直接查询 Context7 代码库，无需打开浏览器翻文档。
+> "帮我看看最近关于 AI 编程有什么新闻？"
 
 **场景三：隐私敏感搜索**
 
@@ -26,7 +24,6 @@
 
 - **🚀 并发检索** — 多关键词同时搜索，效率翻倍
 - **🎯 混合检索** — Embedding 重排序
-- **📚 代码搜索** — Context7 集成，直接查询库文档
 - **🔒 本地部署** — 数据不出本地，隐私安全可控
 
 ## 快速开始
@@ -42,16 +39,16 @@ docker run -d --name searxng -p 8080:8080 searxng/searxng:latest
 ### 方式一：Docker（推荐）
 
 ```bash
-docker run -d --name augmented-search -p 3000:3000 \
+docker run -d --name agent-search -p 3000:3000 \
   -e SEARXNG_URL=http://host.docker.internal:8080 \
-  ghcr.io/sebrinass/mcp-augmented-search:latest
+  ghcr.io/sebrinass/agent-search:latest
 ```
 
 ### 方式二：npm
 
 ```bash
-npm install -g augmented-search
-SEARXNG_URL=http://localhost:8080 augmented-search
+npm install -g agent-search
+SEARXNG_URL=http://localhost:8080 agent-search
 ```
 
 ### 方式三：Agent 一键添加
@@ -60,19 +57,18 @@ SEARXNG_URL=http://localhost:8080 augmented-search
 
 ## 提供的工具
 
-### search — 思考 + 并发搜索
+### search — 并发搜索
 
 支持混合检索和链接去重，一次请求最多搜索 3 个关键词。
 
 **必填参数：**
-- `thought` — 当前思考内容
-- `thoughtNumber` — 当前思考步骤编号
-- `totalThoughts` — 预计总思考步骤数
-- `nextThoughtNeeded` — 是否需要继续思考
+- `searchedKeywords` — 搜索关键词列表（最多 3 个并发）
 
 **可选参数：**
-- `searchedKeywords` — 搜索关键词列表（最多 3 个并发）
+- `mode` — 搜索模式，`fast`=快速搜索(默认)，`embedding`=精准搜索(需配置嵌入模型)
 - `site` — 限制搜索域名
+- `time_range` — 时间范围过滤（day, month, year）
+- `lang` — 搜索语言（如 en, zh, all）
 
 ### read — URL 内容提取
 
@@ -84,22 +80,6 @@ SEARXNG_URL=http://localhost:8080 augmented-search
 - `section` — 提取指定章节
 - `paragraphRange` — 段落范围
 - `readHeadings` — 仅返回标题列表
-
-### library_search — 搜索编程库
-
-搜索编程库，获取 Context7 兼容的库 ID。
-
-**参数：**
-- `query` — 用户问题（用于相关性排序）
-- `libraryName` — 库名，如 `react`
-
-### library_docs — 查询库文档
-
-查询库的文档和代码示例。
-
-**参数：**
-- `libraryId` — 库 ID，如 `/facebook/react`
-- `query` — 用户问题
 
 ## 配置
 
@@ -114,7 +94,7 @@ SEARXNG_URL=http://localhost:8080 augmented-search
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `EMBEDDING_BASE_URL` | - | Embedding API 端点（启用混合检索） |
-| `EMBEDDING_TIMEOUT_MS` | 30000 | 嵌入模型超时（毫秒），超时后降级为纯文本检索 |
+| `EMBEDDING_TIMEOUT_MS` | 90000 | 嵌入模型超时（毫秒），超时后降级为纯文本检索 |
 | `MCP_HTTP_PORT` | - | HTTP 模式端口 |
 | `SEARCH_TIMEOUT_MS` | EMBEDDING_TIMEOUT + 10s | 搜索超时（毫秒） |
 
@@ -131,12 +111,125 @@ SEARXNG_URL=http://localhost:8080 augmented-search
 - 搜索关键词并发不超过 3 个
 - 在 SearXNG 配置中过滤视频网站以提升结果质量
 
+## CLI 使用
+
+安装后可通过 `agent-search` 命令使用 CLI 工具。
+
+### 子命令列表
+
+| 命令 | 说明 |
+|------|------|
+| `search` | 通用网络搜索 |
+| `read` | 读取 URL 内容 |
+| `serve` | 启动 MCP Server |
+
+### search — 网络搜索
+
+```bash
+# 基本搜索
+SEARXNG_URL=http://localhost:8080 agent-search search -q "RAG 技术"
+
+# 多关键词并发搜索
+SEARXNG_URL=http://localhost:8080 agent-search search -q "RAG" "向量数据库" "Embedding"
+
+# 限制域名和时间范围
+SEARXNG_URL=http://localhost:8080 agent-search search -q "React 19" --site github.com --time-range month
+
+# 指定语言和安全搜索
+SEARXNG_URL=http://localhost:8080 agent-search search -q "TypeScript" --lang en --safe-search 1
+
+# JSON 格式输出
+SEARXNG_URL=http://localhost:8080 agent-search search -q "RAG 技术" --json
+
+# 详细输出
+SEARXNG_URL=http://localhost:8080 agent-search search -q "RAG 技术" -v
+```
+
+**选项：**
+
+| 选项 | 说明 |
+|------|------|
+| `-q, --query <keywords...>` | 搜索关键词（必填，最多 3 个） |
+| `--mode <mode>` | 搜索模式: fast, embedding（默认 fast） |
+| `-s, --site <domain>` | 限制搜索域名 |
+| `--time-range <range>` | 时间范围: day, month, year |
+| `--lang <language>` | 搜索语言（默认 all） |
+| `--safe-search <level>` | 安全搜索级别: 0, 1, 2（默认 0） |
+| `-v, --verbose` | 显示详细输出 |
+| `--json` | 以 JSON 格式输出结果 |
+
+### read — URL 内容读取
+
+```bash
+# 读取单个 URL
+agent-search read https://example.com
+
+# 读取多个 URL
+agent-search read https://example.com https://example.org
+
+# 分页读取
+agent-search read https://example.com --start-char 1000 --max-length 5000
+
+# 提取指定章节
+agent-search read https://example.com --section "Installation"
+
+# 段落范围
+agent-search read https://example.com --paragraph-range 1-5
+
+# 仅返回标题列表
+agent-search read https://example.com --headings
+
+# 自定义超时
+agent-search read https://example.com --timeout 15000
+```
+
+**选项：**
+
+| 选项 | 说明 |
+|------|------|
+| `urls` | URL 列表（必填） |
+| `--start-char <number>` | 起始字符位置（默认 0） |
+| `--max-length <number>` | 最大返回字符数 |
+| `--section <heading>` | 提取指定章节 |
+| `--paragraph-range <range>` | 段落范围（如 1-5, 3, 10-） |
+| `--headings` | 仅返回标题列表 |
+| `--timeout <ms>` | 超时时间（毫秒） |
+
+### serve — 启动 MCP Server
+
+```bash
+# stdio 模式（默认）
+agent-search serve
+
+# HTTP 模式
+agent-search serve --transport http --port 3000
+```
+
+**选项：**
+
+| 选项 | 说明 |
+|------|------|
+| `--transport <type>` | 传输模式: stdio, http（默认 stdio） |
+| `--port <number>` | HTTP 模式端口（需 --transport http） |
+
+### 环境变量
+
+CLI 命令依赖以下环境变量：
+
+| 变量 | 必填 | 说明 |
+|------|------|------|
+| `SEARXNG_URL` | search 命令必填 | SearXNG 实例地址 |
+| `EMBEDDING_BASE_URL` | 否 | Embedding API 端点（启用混合检索） |
+| `EMBEDDING_TIMEOUT_MS` | 否 | 嵌入模型超时（毫秒），默认 90000 |
+| `SEARCH_TIMEOUT_MS` | 否 | 搜索超时（毫秒），默认 EMBEDDING_TIMEOUT + 10s |
+| `MCP_HTTP_PORT` | serve 命令 | HTTP 模式端口 |
+
 ## HTTP 模式
 
 设置 `MCP_HTTP_PORT` 启用 HTTP 模式：
 
 ```bash
-MCP_HTTP_PORT=3000 augmented-search
+MCP_HTTP_PORT=3000 agent-search
 ```
 
 可用端点：
@@ -145,10 +238,6 @@ MCP_HTTP_PORT=3000 augmented-search
 |------|------|------|
 | `/mcp` | POST/GET/DELETE | MCP 协议 |
 | `/health` | GET | 健康检查 |
-| `/api/search` | POST | 搜索 |
-| `/api/read` | POST | URL 读取 |
-| `/api/library/search` | POST | 库搜索 |
-| `/api/library/docs` | POST | 库文档 |
 
 ## 更多资源
 

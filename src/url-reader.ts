@@ -9,9 +9,7 @@ import {
   createServerError,
   createContentError,
   createConversionError,
-  createTimeoutError,
   createEmptyContentWarning,
-  createUnexpectedError,
   type ErrorContext
 } from "./error-handler.js";
 import {
@@ -60,6 +58,35 @@ async function getReadability() {
     }
   }
   return readabilityModule;
+}
+
+let happyDomErrorHandlerInstalled = false;
+let isProcessingException = false;
+
+function installHappyDomErrorHandler() {
+  if (happyDomErrorHandlerInstalled) return;
+  happyDomErrorHandlerInstalled = true;
+
+  process.on('uncaughtException', (error: Error) => {
+    if (isProcessingException) return;
+
+    if (error.name === 'DOMException' || error.message?.includes('navigationStart')) {
+      logMessage(null, 'warning', `Happy DOM caught exception: ${error.message}`);
+      return;
+    }
+
+    isProcessingException = true;
+    console.error('Uncaught Exception:', error);
+    process.exit(1);
+  });
+
+  process.on('unhandledRejection', (reason: unknown) => {
+    if (reason instanceof Error && (reason.name === 'DOMException' || reason.message?.includes('navigationStart'))) {
+      logMessage(null, 'warning', `Happy DOM caught rejection: ${reason.message}`);
+      return;
+    }
+    console.error('Unhandled Rejection:', reason);
+  });
 }
 
 // ============ 分页辅助函数 ============
@@ -192,12 +219,27 @@ async function extractWithReadability(htmlContent: string, url: string): Promise
     return null;
   }
 
+  const happyDom = await getHappyDom();
+  if (!happyDom) {
+    return null;
+  }
+
   try {
-    // 使用 JSDOM 解析 HTML（Readability 需要 DOM 文档）
-    const { JSDOM } = await import('jsdom');
-    const dom = new JSDOM(htmlContent, { url });
-    const reader = new readability.Readability(dom.window.document);
+    const { Window } = happyDom;
+    const win = new Window({
+      url,
+      settings: {
+        disableJavaScriptEvaluation: true,
+        disableJavaScriptFileLoading: true,
+        disableCSSFileLoading: true,
+        disableIframePageLoading: true,
+      }
+    });
+    const doc = win.document;
+    doc.write(htmlContent);
+    const reader = new readability.Readability(doc as any);
     const article = reader.parse();
+    win.close();
 
     if (article && article.content) {
       return article.content;
@@ -210,35 +252,6 @@ async function extractWithReadability(htmlContent: string, url: string): Promise
 }
 
 // ============ Happy DOM 渲染 ============
-let happyDomErrorHandlerInstalled = false;
-let isProcessingException = false;
-
-function installHappyDomErrorHandler() {
-  if (happyDomErrorHandlerInstalled) return;
-  happyDomErrorHandlerInstalled = true;
-
-  process.on('uncaughtException', (error: Error) => {
-    if (isProcessingException) return;
-    
-    if (error.name === 'DOMException' || error.message?.includes('navigationStart')) {
-      logMessage(null, 'warning', `Happy DOM caught exception: ${error.message}`);
-      return;
-    }
-    
-    isProcessingException = true;
-    console.error('Uncaught Exception:', error);
-    process.exit(1);
-  });
-
-  process.on('unhandledRejection', (reason: unknown) => {
-    if (reason instanceof Error && (reason.name === 'DOMException' || reason.message?.includes('navigationStart'))) {
-      logMessage(null, 'warning', `Happy DOM caught rejection: ${reason.message}`);
-      return;
-    }
-    console.error('Unhandled Rejection:', reason);
-  });
-}
-
 async function fetchWithHappyDom(
   url: string,
   timeoutMs: number
@@ -458,9 +471,9 @@ async function fetchSingleUrl(
 建议：请使用浏览器 MCP 处理此页面。`;
   }
 
-  // 提取正文内容（使用 Readability）
+  // 提取正文内容（使用 Readability，所有模式均生效）
   let processedHtml = fetchResult.htmlContent;
-  if (ENABLE_READABILITY && fetchResult.source === 'happy-dom') {
+  if (ENABLE_READABILITY) {
     const extractedContent = await extractWithReadability(fetchResult.htmlContent, url);
     if (extractedContent) {
       processedHtml = extractedContent;

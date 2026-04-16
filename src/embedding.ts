@@ -302,10 +302,8 @@ function rrfFusion(
 export async function rerankWithHybridSearch(
   query: string,
   results: SearchResult[],
-  _enableEmbedding?: boolean
+  mode?: 'fast' | 'embedding'
 ): Promise<ScoredResult[]> {
-  const useEmbedding = isEmbeddingEnabled;
-  
   if (results.length <= TOP_K) {
     return results.map((result, index) => ({
       ...result,
@@ -315,7 +313,7 @@ export async function rerankWithHybridSearch(
     }));
   }
   
-  if (!useEmbedding) {
+  if (!(mode === 'embedding' && isEmbeddingEnabled)) {
     const bm25Results = miniSearchRetrieve(query, results);
     return bm25Results.slice(0, TOP_K).map(item => ({
       ...item.result,

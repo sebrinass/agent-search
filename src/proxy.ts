@@ -65,16 +65,35 @@ function shouldBypassProxy(targetUrl: string): boolean {
  * Node.js fetch uses Undici under the hood, which requires a 'dispatcher' option
  * instead of 'agent'. This function creates a ProxyAgent compatible with fetch.
  * 
+ * 根据目标 URL 协议选择代理：
+ * - HTTPS 目标：优先使用 HTTPS_PROXY
+ * - HTTP 目标：优先使用 HTTP_PROXY
+ * 
  * Environment variables checked (in order):
  * - HTTP_PROXY / http_proxy: For HTTP requests
  * - HTTPS_PROXY / https_proxy: For HTTPS requests
  * - NO_PROXY / no_proxy: Comma-separated list of hosts to bypass proxy
  * 
- * @param targetUrl - Optional target URL to check against NO_PROXY rules
+ * @param targetUrl - Optional target URL to determine proxy selection and check NO_PROXY rules
  * @returns ProxyAgent dispatcher for fetch, or undefined if no proxy configured or bypassed
  */
 export function createProxyAgent(targetUrl?: string): ProxyAgent | undefined {
-  const proxyUrl = process.env.HTTP_PROXY || process.env.HTTPS_PROXY || process.env.http_proxy || process.env.https_proxy;
+  let proxyUrl: string | undefined;
+
+  if (targetUrl) {
+    try {
+      const protocol = new URL(targetUrl).protocol;
+      if (protocol === 'https:') {
+        proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy;
+      } else {
+        proxyUrl = process.env.HTTP_PROXY || process.env.http_proxy || process.env.HTTPS_PROXY || process.env.https_proxy;
+      }
+    } catch {
+      proxyUrl = process.env.HTTP_PROXY || process.env.HTTPS_PROXY || process.env.http_proxy || process.env.https_proxy;
+    }
+  } else {
+    proxyUrl = process.env.HTTP_PROXY || process.env.HTTPS_PROXY || process.env.http_proxy || process.env.https_proxy;
+  }
 
   if (!proxyUrl) {
     return undefined;

@@ -4,27 +4,10 @@ import { randomUUID } from "crypto";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-  SetLevelRequestSchema,
-  ListResourcesRequestSchema,
-  ReadResourceRequestSchema,
-  LoggingLevel,
-} from "@modelcontextprotocol/sdk/types.js";
-import { logMessage, setLogLevel } from "./logging.js";
-import { packageVersion } from "./index.js";
-import { createApiRouter } from "./api-routes.js";
-import { ResearchServer, SEARCH_TOOL } from "./research.js";
-import { createConfigResource, createHelpResource } from "./resources.js";
+import { packageVersion } from "./version.js";
+import { ResearchServer } from "./research.js";
+import { registerRequestHandlers } from "./tool-handlers.js";
 import { ALLOWED_ORIGINS } from "./config.js";
-import { handleToolCall, getToolDefinitions } from "./tool-handlers.js";
-
-export interface HttpServerOptions {
-  researchServer?: ResearchServer;
-}
-
-type ServerFactory = () => { server: Server; researchServer: ResearchServer };
 
 function createServerInstance(): { server: Server; researchServer: ResearchServer } {
   const server = new Server(
@@ -44,79 +27,7 @@ function createServerInstance(): { server: Server; researchServer: ResearchServe
   const researchServer = new ResearchServer();
   researchServer.setServer(server);
 
-  let currentLogLevel: LoggingLevel = "info";
-
-  server.setRequestHandler(ListToolsRequestSchema, async () => {
-    logMessage(server, "debug", "Handling list_tools request");
-    return {
-      tools: [SEARCH_TOOL, ...getToolDefinitions()],
-    };
-  });
-
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
-    return handleToolCall(server, researchServer, name, args);
-  });
-
-  server.setRequestHandler(SetLevelRequestSchema, async (request) => {
-    const { level } = request.params;
-    logMessage(server, "info", `Setting log level to: ${level}`);
-    currentLogLevel = level;
-    setLogLevel(level);
-    return {};
-  });
-
-  server.setRequestHandler(ListResourcesRequestSchema, async () => {
-    logMessage(server, "debug", "Handling list_resources request");
-    return {
-      resources: [
-        {
-          uri: "config://server-config",
-          mimeType: "application/json",
-          name: "Server Configuration",
-          description: "Current server configuration and environment variables"
-        },
-        {
-          uri: "help://usage-guide",
-          mimeType: "text/markdown",
-          name: "Usage Guide",
-          description: "How to use the Augmented Search server effectively"
-        }
-      ]
-    };
-  });
-
-  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-    const { uri } = request.params;
-    logMessage(server, "debug", `Handling read_resource request for: ${uri}`);
-
-    switch (uri) {
-      case "config://server-config":
-        return {
-          contents: [
-            {
-              uri: uri,
-              mimeType: "application/json",
-              text: createConfigResource()
-            }
-          ]
-        };
-
-      case "help://usage-guide":
-        return {
-          contents: [
-            {
-              uri: uri,
-              mimeType: "text/markdown",
-              text: createHelpResource()
-            }
-          ]
-        };
-
-      default:
-        throw new Error(`Unknown resource: ${uri}`);
-    }
-  });
+  registerRequestHandlers(server, researchServer);
 
   return { server, researchServer };
 }
@@ -125,9 +36,12 @@ interface SessionState {
   server: Server;
   researchServer: ResearchServer;
   transport: StreamableHTTPServerTransport;
+  lastActivity: number;
 }
 
-export async function createHttpServer(_server: Server, options?: HttpServerOptions): Promise<express.Application> {
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+
+export async function createHttpServer(): Promise<express.Application> {
   const app = express();
   app.use(express.json());
   
@@ -146,12 +60,27 @@ export async function createHttpServer(_server: Server, options?: HttpServerOpti
 
   const sessions: Map<string, SessionState> = new Map();
 
+  // 定时清理过期会话
+  const cleanupInterval = setInterval(() => {
+    const now = Date.now();
+    for (const [id, session] of sessions) {
+      if (now - session.lastActivity > SESSION_TIMEOUT_MS) {
+        console.log(`[HTTP] Cleaning up expired session: ${id}`);
+        try {
+          session.transport.close?.();
+        } catch {}
+        sessions.delete(id);
+      }
+    }
+  }, 5 * 60 * 1000);
+
   app.post('/mcp', async (req, res) => {
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
     let session: SessionState;
 
     if (sessionId && sessions.has(sessionId)) {
       session = sessions.get(sessionId)!;
+      session.lastActivity = Date.now();
       console.log(`[HTTP] Reusing session: ${sessionId}`);
     } else if (!sessionId && isInitializeRequest(req.body)) {
       console.log("[HTTP] Creating new session");
@@ -164,7 +93,8 @@ export async function createHttpServer(_server: Server, options?: HttpServerOpti
           sessions.set(newSessionId, {
             server: newServer,
             researchServer,
-            transport
+            transport,
+            lastActivity: Date.now()
           });
           console.log(`[HTTP] Session initialized: ${newSessionId}`);
         },
@@ -183,7 +113,7 @@ export async function createHttpServer(_server: Server, options?: HttpServerOpti
 
       try {
         await newServer.connect(transport);
-        session = { server: newServer, researchServer, transport };
+        session = { server: newServer, researchServer, transport, lastActivity: Date.now() };
       } catch (error) {
         console.error(`[HTTP] Failed to connect server:`, error instanceof Error ? error.message : String(error));
         res.status(500).json({
@@ -238,6 +168,7 @@ export async function createHttpServer(_server: Server, options?: HttpServerOpti
     }
 
     const session = sessions.get(sessionId)!;
+    session.lastActivity = Date.now();
     try {
       await session.transport.handleRequest(req, res);
     } catch (error) {
@@ -262,6 +193,7 @@ export async function createHttpServer(_server: Server, options?: HttpServerOpti
     }
 
     const session = sessions.get(sessionId)!;
+    session.lastActivity = Date.now();
     try {
       await session.transport.handleRequest(req, res);
     } catch (error) {
@@ -277,19 +209,24 @@ export async function createHttpServer(_server: Server, options?: HttpServerOpti
   app.get('/health', (_req, res) => {
     res.json({ 
       status: 'healthy',
-      server: 'augmented-search',
+      server: 'agent-search',
       version: packageVersion,
       transport: 'http',
       activeSessions: sessions.size
     });
   });
 
-  const apiRouter = createApiRouter();
-  app.use('/api', apiRouter);
-
-  if (options?.researchServer) {
-    console.warn("[HTTP] Warning: researchServer option is deprecated in HTTP mode. Each session creates its own ResearchServer.");
-  }
+  // 关闭时清理定时器
+  const originalListen = app.listen.bind(app);
+  app.listen = (...args: any[]) => {
+    const server = originalListen(...args);
+    const originalClose = server.close.bind(server);
+    server.close = (callback?: () => void) => {
+      clearInterval(cleanupInterval);
+      return originalClose(callback);
+    };
+    return server;
+  };
 
   return app;
 }

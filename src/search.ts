@@ -1,18 +1,14 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { SearXNGWeb } from "./types.js";
 import { createProxyAgent } from "./proxy.js";
-import { logMessage } from "./logging.js";
 import {
   createConfigurationError,
   createNetworkError,
   createServerError,
   createJSONError,
-  createDataError,
-  createNoResultsMessage,
   type ErrorContext
 } from "./error-handler.js";
 import {
-  SEARCH_PAGES,
   SEARCH_ENGINES,
   SEARXNG_URL,
   AUTH_USERNAME,
@@ -28,10 +24,10 @@ function getEnginesParam(): string | null {
   return engines;
 }
 
-async function fetchSinglePage(
+export async function fetchSinglePage(
   server: Server,
   query: string,
-  pageno: number,
+  pageno: number = 1,
   time_range?: string,
   language: string = "all",
   safesearch?: number,
@@ -118,7 +114,7 @@ async function fetchSinglePage(
       url: url.toString(),
       searxngUrl: SEARXNG_URL,
       proxyAgent: !!proxyAgent,
-      username: AUTH_USERNAME
+      username: AUTH_USERNAME ? '[configured]' : undefined
     };
     throw createNetworkError(error, context);
   }
@@ -163,88 +159,4 @@ async function fetchSinglePage(
     url: result.url || "",
     score: result.score || 0,
   }));
-}
-
-export async function performWebSearch(
-  server: Server,
-  query: string,
-  pageno: number = 1,
-  time_range?: string,
-  language: string = "all",
-  safesearch?: number,
-  site?: string
-) {
-  const startTime = Date.now();
-  
-  const searchParams = [
-    `pages: ${SEARCH_PAGES}`,
-    `lang: ${language}`,
-    time_range ? `time: ${time_range}` : null,
-    safesearch ? `safesearch: ${safesearch}` : null
-  ].filter(Boolean).join(", ");
-  
-  logMessage(server, "info", `Starting web search: "${query}" (${searchParams})`);
-
-  const pagePromises: Promise<Array<{ title: string; content: string; url: string; score: number }>>[] = [];
-  
-  for (let page = 1; page <= SEARCH_PAGES; page++) {
-    pagePromises.push(fetchSinglePage(server, query, page, time_range, language, safesearch, site));
-  }
-
-  const pageResults = await Promise.all(pagePromises);
-  
-  const seenUrls = new Set<string>();
-  const allResults: Array<{ title: string; content: string; url: string; score: number }> = [];
-  
-  for (const results of pageResults) {
-    for (const result of results) {
-      if (!seenUrls.has(result.url)) {
-        seenUrls.add(result.url);
-        allResults.push(result);
-      }
-    }
-  }
-
-  if (allResults.length === 0) {
-    logMessage(server, "info", `No results found for query: "${query}"`);
-    return createNoResultsMessage(query);
-  }
-
-  const duration = Date.now() - startTime;
-  logMessage(server, "info", `Search completed: "${query}" (${searchParams}) - ${allResults.length} results in ${duration}ms`);
-
-  return allResults
-    .map((r) => `Title: ${r.title}\nDescription: ${r.content}\nURL: ${r.url}\nRelevance Score: ${r.score.toFixed(3)}`)
-    .join("\n\n");
-}
-
-export async function performWebSearchRaw(
-  server: Server,
-  query: string,
-  time_range?: string,
-  language: string = "all",
-  safesearch?: number,
-  site?: string
-): Promise<Array<{ title: string; content: string; url: string; score: number }>> {
-  const pagePromises: Promise<Array<{ title: string; content: string; url: string; score: number }>>[] = [];
-  
-  for (let page = 1; page <= SEARCH_PAGES; page++) {
-    pagePromises.push(fetchSinglePage(server, query, page, time_range, language, safesearch, site));
-  }
-
-  const pageResults = await Promise.all(pagePromises);
-  
-  const seenUrls = new Set<string>();
-  const allResults: Array<{ title: string; content: string; url: string; score: number }> = [];
-  
-  for (const results of pageResults) {
-    for (const result of results) {
-      if (!seenUrls.has(result.url)) {
-        seenUrls.add(result.url);
-        allResults.push(result);
-      }
-    }
-  }
-
-  return allResults;
 }

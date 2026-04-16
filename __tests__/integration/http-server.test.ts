@@ -9,7 +9,6 @@
 import { strict as assert } from 'node:assert';
 import { createHttpServer } from '../../src/http-server.js';
 import { testFunction, createTestResults, printTestSummary } from '../helpers/test-utils.js';
-import { createMockServer } from '../helpers/mock-server.js';
 
 const results = createTestResults();
 
@@ -17,8 +16,7 @@ async function runTests() {
   console.log('🧪 Integration Testing: http-server.ts\n');
 
   await testFunction('Health check endpoint exists', async () => {
-    const mockServer = createMockServer();
-    const app = await createHttpServer(mockServer as any);
+    const app = await createHttpServer();
     
     // Verify app was created successfully
     assert.ok(app);
@@ -26,8 +24,7 @@ async function runTests() {
   }, results);
 
   await testFunction('Health check endpoint response', async () => {
-    const mockServer = createMockServer();
-    const app = await createHttpServer(mockServer as any);
+    const app = await createHttpServer();
     
     const mockReq = {
       method: 'GET',
@@ -66,8 +63,7 @@ async function runTests() {
   }, results);
 
   await testFunction('CORS configuration', async () => {
-    const mockServer = createMockServer();
-    const app = await createHttpServer(mockServer as any);
+    const app = await createHttpServer();
     
     // Verify the app was created with CORS middleware
     assert.ok(app);
@@ -75,8 +71,7 @@ async function runTests() {
   }, results);
 
   await testFunction('POST /mcp invalid request handling', async () => {
-    const mockServer = createMockServer();
-    const app = await createHttpServer(mockServer as any);
+    const app = await createHttpServer();
     
     const mockReq = {
       method: 'POST',
@@ -118,8 +113,7 @@ async function runTests() {
   }, results);
 
   await testFunction('GET /mcp invalid session handling', async () => {
-    const mockServer = createMockServer();
-    const app = await createHttpServer(mockServer as any);
+    const app = await createHttpServer();
     
     const mockReq = {
       method: 'GET',
@@ -161,8 +155,7 @@ async function runTests() {
   }, results);
 
   await testFunction('DELETE /mcp invalid session handling', async () => {
-    const mockServer = createMockServer();
-    const app = await createHttpServer(mockServer as any);
+    const app = await createHttpServer();
     
     const mockReq = {
       method: 'DELETE',
@@ -204,8 +197,7 @@ async function runTests() {
   }, results);
 
   await testFunction('Middleware stack configuration', async () => {
-    const mockServer = createMockServer();
-    const app = await createHttpServer(mockServer as any);
+    const app = await createHttpServer();
     
     // Verify that the server was configured successfully
     assert.ok(app);

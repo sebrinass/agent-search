@@ -1,6 +1,6 @@
 # 配置参考
 
-augmented-search 的完整环境变量配置。
+agent-search 的完整环境变量配置。
 
 ## 必填配置
 
@@ -39,7 +39,8 @@ Embedding API 端点地址。
 EMBEDDING_BASE_URL=http://localhost:11434
 ```
 
-**默认值：** 使用 `OLLAMA_HOST` 环境变量
+**默认值：** 空（未设置）
+**备选逻辑：** 若未设置 `EMBEDDING_BASE_URL`，则使用 `OLLAMA_HOST` 的值
 
 **常用端点：**
 | 服务 | 端点地址 |
@@ -88,10 +89,10 @@ TOP_K=5
 嵌入模型超时时间（毫秒）。超时后自动降级为纯文本检索（BM25）。
 
 ```bash
-EMBEDDING_TIMEOUT_MS=30000
+EMBEDDING_TIMEOUT_MS=90000
 ```
 
-**默认值：** `30000`（30 秒）
+**默认值：** `90000`（90 秒）
 
 **说明：**
 - 搜索超时会自动设置为 `EMBEDDING_TIMEOUT_MS + 10000`，确保降级后有足够时间完成检索
@@ -101,6 +102,15 @@ EMBEDDING_TIMEOUT_MS=30000
 
 ## 搜索控制配置（可选）
 
+### 搜索模式（mode）
+
+搜索工具支持两种模式，通过调用参数 `mode` 指定：
+
+- `fast`（默认）— 快速搜索，纯文本检索，响应速度快
+- `embedding` — 精准搜索，使用 Embedding 重排序提升相关性，需配置嵌入模型（`EMBEDDING_BASE_URL`）
+
+**使用建议：** 一般问题或简单搜索用 `fast` 模式，需要深度搜索时可启用 `embedding` 模式。
+
 ### SEARCH_PAGES
 
 搜索页数，每页约 10 条结果。
@@ -109,7 +119,7 @@ EMBEDDING_TIMEOUT_MS=30000
 SEARCH_PAGES=3
 ```
 
-**默认值：** 智能调整（纯文本 1 页，混合检索 3 页）
+**默认值：** `1`
 
 ### SEARCH_ENGINES
 
@@ -156,16 +166,6 @@ SAFE_SEARCH=0
 **默认值：** `0`（关闭）
 
 **可选值：** `0`（关闭）、`1`（中等）、`2`（严格）
-
-### MAX_THOUGHTS
-
-搜索工具最大思考步骤数。
-
-```bash
-MAX_THOUGHTS=5
-```
-
-**默认值：** `5`
 
 ### MAX_KEYWORDS
 
@@ -248,7 +248,6 @@ MCP_HTTP_PORT=3000
 启用后可访问：
 - MCP 端点: `http://localhost:3000/mcp`
 - 健康检查: `http://localhost:3000/health`
-- REST API: `http://localhost:3000/api/*`
 
 ### AUTH_USERNAME / AUTH_PASSWORD
 
@@ -317,28 +316,6 @@ EMBEDDING_CACHE_SIZE=1000
 
 ---
 
-## Context7 配置（可选）
-
-### CONTEXT7_API_KEY
-
-Context7 API 密钥，用于代码库搜索功能。
-
-```bash
-CONTEXT7_API_KEY=your-api-key
-```
-
-### CONTEXT7_API_URL
-
-Context7 API 地址。
-
-```bash
-CONTEXT7_API_URL=https://api.context7.com/v1
-```
-
-**默认值：** `https://api.context7.com/v1`
-
----
-
 ## 代理配置（可选）
 
 ### HTTP_PROXY / HTTPS_PROXY
@@ -377,7 +354,7 @@ SEARXNG_URL=http://localhost:8080
 # 混合检索
 EMBEDDING_BASE_URL=http://localhost:11434
 EMBEDDING_MODEL=nomic-embed-text
-EMBEDDING_TIMEOUT_MS=30000
+EMBEDDING_TIMEOUT_MS=90000
 TOP_K=5
 
 # HTTP 模式
@@ -393,12 +370,12 @@ SEARCH_PAGES=3
 
 ```yaml
 services:
-  augmented-search:
-    image: ghcr.io/sebrinass/mcp-augmented-search:latest
+  agent-search:
+    image: ghcr.io/sebrinass/agent-search:latest
     environment:
       - SEARXNG_URL=http://searxng:8080
       - EMBEDDING_BASE_URL=http://host.docker.internal:11434
-      - EMBEDDING_TIMEOUT_MS=30000
+      - EMBEDDING_TIMEOUT_MS=90000
       - MCP_HTTP_PORT=3000
 ```
 
@@ -409,7 +386,7 @@ services:
 | 模式 | SEARCH_PAGES | EMBEDDING_TIMEOUT_MS | 相关性 |
 |------|--------------|---------------------|--------|
 | 纯文本 | 1 | - | ~50% |
-| 混合检索 | 3 | 30000 | ~80% |
+| 混合检索 | 3 | 90000 | ~80% |
 
 **优化建议：**
 - 搜索关键词并发不超过 3 个

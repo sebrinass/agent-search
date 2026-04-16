@@ -11,6 +11,7 @@ const LINK_DEDUP_TTL_MS = LINK_DEDUP_TTL * 1000;
 const URL_CACHE_TTL_MS = URL_CACHE_TTL * 1000;
 const EMBEDDING_CACHE_TTL = 30 * 60 * 1000;
 
+
 // ============ 类型定义 ============
 interface UrlCacheValue {
   htmlContent: string;
@@ -150,146 +151,50 @@ class UrlContentCache {
  * 嵌入缓存
  * - 大小：可配置，默认500条
  * - TTL：30分钟（固定）
- * - 存储格式：Float16Array（节省50%内存）
+ * - 存储格式：Float32Array
  * - 键：文本内容的MD5 hash
  */
 class EmbeddingCache {
-  private cache: QuickLRU<string, Uint16Array>; // Float16Array在JS中用Uint16Array存储
+  private cache: QuickLRU<string, Float32Array>;
 
   constructor() {
-    this.cache = new QuickLRU<string, Uint16Array>({
+    this.cache = new QuickLRU<string, Float32Array>({
       maxSize: EMBEDDING_CACHE_SIZE,
       maxAge: EMBEDDING_CACHE_TTL
     });
   }
 
-  /**
-   * 生成文本的MD5 hash作为键
-   */
   private hashText(text: string): string {
     return crypto.createHash('md5').update(text).digest('hex');
   }
 
-  /**
-   * 将Float32Array转换为Float16Array（用Uint16Array存储）
-   * 节省50%内存
-   */
-  private float32ToFloat16(float32: Float32Array): Uint16Array {
-    const float16 = new Uint16Array(float32.length);
-    for (let i = 0; i < float32.length; i++) {
-      // 简化的Float16转换（精度略有损失，但足够用于嵌入向量）
-      float16[i] = this.toFloat16(float32[i]);
-    }
-    return float16;
-  }
-
-  /**
-   * 将Float16Array转换回Float32Array
-   */
-  private float16ToFloat32(float16: Uint16Array): Float32Array {
-    const float32 = new Float32Array(float16.length);
-    for (let i = 0; i < float16.length; i++) {
-      float32[i] = this.fromFloat16(float16[i]);
-    }
-    return float32;
-  }
-
-  /**
-   * 单个float32转float16
-   */
-  private toFloat16(value: number): number {
-    const float32 = new Float32Array(1);
-    float32[0] = value;
-    const buffer = new ArrayBuffer(2);
-    const float16View = new DataView(buffer);
-    
-    // 简化转换：直接截断精度
-    const sign = Math.sign(value);
-    const absValue = Math.abs(value);
-    
-    if (absValue === 0) return 0;
-    if (absValue > 65504) return sign > 0 ? 0x7C00 : 0xFC00; // Infinity
-    if (Number.isNaN(value)) return 0x7E00; // NaN
-    
-    // 使用简单的缩放方法
-    const exponent = Math.floor(Math.log2(absValue));
-    const mantissa = absValue / Math.pow(2, exponent) - 1;
-    
-    const exp16 = exponent + 15;
-    const mant16 = Math.round(mantissa * 1024);
-    
-    const bits = (sign > 0 ? 0 : 0x8000) | ((exp16 & 0x1F) << 10) | (mant16 & 0x3FF);
-    return bits;
-  }
-
-  /**
-   * 单个float16转float32
-   */
-  private fromFloat16(bits: number): number {
-    const sign = (bits & 0x8000) >> 15;
-    const exponent = (bits & 0x7C00) >> 10;
-    const mantissa = bits & 0x03FF;
-    
-    if (exponent === 0) {
-      // 非规格化数
-      return sign ? -mantissa / 1024 * Math.pow(2, -14) : mantissa / 1024 * Math.pow(2, -14);
-    }
-    if (exponent === 31) {
-      // Infinity 或 NaN
-      return mantissa === 0 ? (sign ? -Infinity : Infinity) : NaN;
-    }
-    
-    const value = (1 + mantissa / 1024) * Math.pow(2, exponent - 15);
-    return sign ? -value : value;
-  }
-
-  /**
-   * 获取嵌入向量
-   */
   get(text: string): Float32Array | null {
     const key = this.hashText(text);
-    const float16 = this.cache.get(key);
-    if (!float16) return null;
-    return this.float16ToFloat32(float16);
+    return this.cache.get(key) ?? null;
   }
 
-  /**
-   * 设置嵌入向量
-   */
   set(text: string, embedding: Float32Array | number[]): void {
     const key = this.hashText(text);
-    const float32 = embedding instanceof Float32Array 
-      ? embedding 
+    const float32 = embedding instanceof Float32Array
+      ? embedding
       : new Float32Array(embedding);
-    const float16 = this.float32ToFloat16(float32);
-    this.cache.set(key, float16);
+    this.cache.set(key, float32);
   }
 
-  /**
-   * 检查是否存在
-   */
   has(text: string): boolean {
     const key = this.hashText(text);
     return this.cache.has(key);
   }
 
-  /**
-   * 清空缓存
-   */
   clear(): void {
     this.cache.clear();
   }
 
-  /**
-   * 获取统计信息
-   */
   getStats(): { size: number; maxSize: number; estimatedMemoryMB: number } {
-    // 估算内存使用：每条嵌入向量约 1024 维 * 2 字节 = 2KB
-    // 500条约 1MB
-    const avgDimensions = 1024; // qwen3-embedding-0.6B 输出维度
-    const bytesPerEntry = avgDimensions * 2; // Float16 = 2 bytes
+    const avgDimensions = 1024;
+    const bytesPerElement = 4;
+    const bytesPerEntry = avgDimensions * bytesPerElement;
     const totalBytes = this.cache.size * bytesPerEntry;
-    
     return {
       size: this.cache.size,
       maxSize: this.cache.maxSize,

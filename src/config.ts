@@ -10,10 +10,10 @@ export const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || 'nomic-embed-text'
 export const isEmbeddingEnabled = !!(EMBEDDING_API_KEY || EMBEDDING_BASE_URL);
 
 // ============ 嵌入超时配置 ============
-export const EMBEDDING_TIMEOUT_MS = parseInt(process.env.EMBEDDING_TIMEOUT_MS || '30000', 10);
+export const EMBEDDING_TIMEOUT_MS = parseInt(process.env.EMBEDDING_TIMEOUT_MS || '90000', 10);
 
 // ============ 搜索相关配置 ============
-export const DEFAULT_SEARCH_PAGES = isEmbeddingEnabled ? 3 : 1;
+export const DEFAULT_SEARCH_PAGES = 1;
 export const SEARCH_PAGES = parseInt(process.env.SEARCH_PAGES || String(DEFAULT_SEARCH_PAGES), 10);
 export const SEARCH_ENGINES = process.env.SEARCH_ENGINES || '';
 export const SEARCH_TIMEOUT_MS = parseInt(process.env.SEARCH_TIMEOUT_MS || String(EMBEDDING_TIMEOUT_MS + 10000), 10);
@@ -25,7 +25,6 @@ export const TOP_K = parseInt(process.env.TOP_K || '5', 10);
 export const RRF_K = 60;
 
 // ============ Research 相关配置 ============
-export const MAX_THOUGHTS = parseInt(process.env.MAX_THOUGHTS || '5', 10);
 export const MAX_KEYWORDS = parseInt(process.env.MAX_KEYWORDS || '3', 10);
 export const MAX_DESCRIPTION_LENGTH = parseInt(process.env.MAX_DESCRIPTION_LENGTH || '200', 10);
 
@@ -39,10 +38,6 @@ export const LINK_DEDUP_TTL = parseInt(process.env.LINK_DEDUP_TTL || '86400', 10
 export const URL_CACHE_TTL = parseInt(process.env.URL_CACHE_TTL || '3600', 10);
 export const URL_CACHE_SIZE = parseInt(process.env.URL_CACHE_SIZE || '100', 10);
 export const EMBEDDING_CACHE_SIZE = parseInt(process.env.EMBEDDING_CACHE_SIZE || '1000', 10);
-
-// ============ Context7 相关配置 ============
-export const CONTEXT7_API_KEY = process.env.CONTEXT7_API_KEY || '';
-export const CONTEXT7_API_URL = process.env.CONTEXT7_API_URL || 'https://api.context7.com/v1';
 
 // ============ HTTP 服务相关配置 ============
 export const MCP_HTTP_PORT = process.env.MCP_HTTP_PORT;
@@ -75,7 +70,6 @@ export function getEmbeddingConfig() {
 
 export function getResearchConfig() {
   return {
-    maxThoughts: MAX_THOUGHTS,
     maxKeywords: MAX_KEYWORDS,
     searchTimeoutMs: SEARCH_TIMEOUT_MS,
     maxDescriptionLength: MAX_DESCRIPTION_LENGTH
