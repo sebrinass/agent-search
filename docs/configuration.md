@@ -255,7 +255,7 @@ Basic Auth 认证凭据。
 
 ```bash
 AUTH_USERNAME=admin
-AUTH_PASSWORD=secret
+AUTH_PASSWORD=your-secret-password
 ```
 
 **默认值：** 空（无认证）

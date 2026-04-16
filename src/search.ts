@@ -24,6 +24,11 @@ function getEnginesParam(): string | null {
   return engines;
 }
 
+function isValidDomain(domain: string): boolean {
+  const domainRegex = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.[a-zA-Z]{2,}$/;
+  return domainRegex.test(domain);
+}
+
 export async function fetchSinglePage(
   server: Server,
   query: string,
@@ -52,6 +57,9 @@ export async function fetchSinglePage(
 
   let searchQuery = query;
   if (site) {
+    if (!isValidDomain(site)) {
+      throw createConfigurationError(`Invalid site domain format: ${site}. Expected format: example.com`);
+    }
     searchQuery = `site:${site} ${query}`;
   }
 

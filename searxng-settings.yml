@@ -9,6 +9,8 @@ search:
     - json
 
 server:
+  # ⚠️ 安全警告：部署前必须修改为随机字符串！
+  # 用于签名 cookie 和防 CSRF 攻击
   secret_key: "change-this-to-a-random-string"
   bind_address: "0.0.0.0"
   port: 8080
