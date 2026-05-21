@@ -10,6 +10,9 @@ FROM node:lts-alpine AS release
 
 RUN apk update && apk upgrade
 
+# Install runtime dependencies for curl-cffi
+RUN apk add --no-cache libcurl libgcc libstdc++
+
 WORKDIR /app
 
 COPY --from=builder /app/dist /app/dist

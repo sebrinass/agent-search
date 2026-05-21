@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { ResearchServer, SearchInput } from "../research.js";
 import { packageVersion } from "../version.js";
-import { SEARXNG_URL, isEmbeddingEnabled } from "../config.js";
+import { SEARXNG_URL } from "../config.js";
 
 export function registerSearchCommand(program: Command) {
   program
@@ -13,19 +13,13 @@ export function registerSearchCommand(program: Command) {
     .option("--time-range <range>", "时间范围: day, month, year")
     .option("--lang <language>", "搜索语言", "all")
     .option("--safe-search <level>", "安全搜索级别: 0, 1, 2", "0")
-    .option("-m, --mode <mode>", "搜索模式: fast=快速(默认), embedding=精准(需配置嵌入模型)", 'fast')
-    .option("-v, --verbose", "显示详细输出", false)
+    .option("-c, --category <category>", "搜索分类: general, news, science, it, images, videos, files, music")
     .option("--json", "以 JSON 格式输出结果", false)
     .action(async (opts) => {
       if (!SEARXNG_URL) {
         console.error("❌ 缺少 SEARXNG_URL 环境变量");
         console.error("请设置 SearXNG 实例地址，例如: SEARXNG_URL=http://localhost:8080 agent-search search -q \"关键词\"");
         process.exit(1);
-      }
-
-      const mode = opts.mode as 'fast' | 'embedding';
-      if (mode === 'embedding' && !isEmbeddingEnabled) {
-        console.warn("⚠️ 警告: embedding 模式未配置 EMBEDDING_BASE_URL，将自动降级为 fast 模式");
       }
 
       const server = new Server(
@@ -41,7 +35,7 @@ export function registerSearchCommand(program: Command) {
         time_range: opts.timeRange,
         lang: opts.lang,
         safeSearch: parseInt(opts.safeSearch, 10),
-        mode: mode,
+        category: opts.category,
       };
 
       const result = await researchServer.processSearch(searchInput);

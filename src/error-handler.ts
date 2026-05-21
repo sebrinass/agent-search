@@ -84,14 +84,6 @@ export function createJSONError(responseText: string, context: ErrorContext): MC
   return new MCPSearXNGError(`🔍 SearXNG Response Error: Invalid JSON format. Response: "${preview}..."`);
 }
 
-export function createDataError(data: any, context: ErrorContext): MCPSearXNGError {
-  return new MCPSearXNGError(`🔍 SearXNG Data Error: Missing results array in response`);
-}
-
-export function createNoResultsMessage(query: string): string {
-  return `🔍 No results found for "${query}". Try different search terms or check if SearXNG search engines are working.`;
-}
-
 export function createURLFormatError(url: string): MCPSearXNGError {
   return new MCPSearXNGError(`🔧 URL Format Error: Invalid URL "${url}"`);
 }
@@ -104,17 +96,8 @@ export function createConversionError(error: any, url: string, htmlContent: stri
   return new MCPSearXNGError(`🔄 Conversion Error: Cannot convert HTML to Markdown (${url})`);
 }
 
-export function createTimeoutError(timeout: number, url: string): MCPSearXNGError {
-  const hostname = new URL(url).hostname;
-  return new MCPSearXNGError(`⏱️ Timeout Error: ${hostname} took longer than ${timeout}ms to respond`);
-}
-
 export function createEmptyContentWarning(url: string, htmlLength: number, htmlPreview: string): string {
   return `📄 Content Warning: Page fetched but appears empty after conversion (${url}). May contain only media or require JavaScript.`;
-}
-
-export function createUnexpectedError(error: any, context: ErrorContext): MCPSearXNGError {
-  return new MCPSearXNGError(`❓ Unexpected Error: ${error.message || String(error)}`);
 }
 
 export function validateEnvironment(): string | null {

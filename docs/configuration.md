@@ -72,7 +72,7 @@ EMBEDDING_MODEL=nomic-embed-text
 |------|----------|
 | Ollama | `nomic-embed-text`, `mxbai-embed-large` |
 | OpenAI | `text-embedding-3-small` |
-| Jina | `jina-embeddings-v2-base-en` |
+| Jina | `jina-embeddings-v5-nano` |
 
 ### TOP_K
 
@@ -102,14 +102,14 @@ EMBEDDING_TIMEOUT_MS=90000
 
 ## 搜索控制配置（可选）
 
-### 搜索模式（mode）
+### 搜索模式
 
-搜索工具支持两种模式，通过调用参数 `mode` 指定：
+搜索模式根据 `EMBEDDING_BASE_URL` 配置自动判断，无需手动指定：
 
-- `fast`（默认）— 快速搜索，纯文本检索，响应速度快
-- `embedding` — 精准搜索，使用 Embedding 重排序提升相关性，需配置嵌入模型（`EMBEDDING_BASE_URL`）
+- **未配置 `EMBEDDING_BASE_URL`** — 快速搜索，纯文本检索（BM25），响应速度快
+- **配置了 `EMBEDDING_BASE_URL`** — 精准搜索，使用 Embedding 重排序提升相关性
 
-**使用建议：** 一般问题或简单搜索用 `fast` 模式，需要深度搜索时可启用 `embedding` 模式。
+**说明：** 搜索模式由系统根据嵌入模型配置自动切换，无需在调用参数中指定 mode。
 
 ### SEARCH_PAGES
 

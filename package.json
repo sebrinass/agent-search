@@ -1,6 +1,6 @@
 {
   "name": "agent-local-search",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "为 Agent 提供的本地联网搜索工具，支持 CLI 和 MCP 模式",
   "license": "MIT",
   "author": "sebrinass",
@@ -44,14 +44,16 @@
     "inspector": "cross-env DANGEROUSLY_OMIT_AUTH=true npx @modelcontextprotocol/inspector node dist/index.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@mozilla/readability": "^0.6.0",
     "commander": "^14.0.3",
-    "cors": "^2.8.5",
-    "express": "^5.1.0",
-    "happy-dom": "^20.8.3",
+    "cors": "^2.8.6",
+    "curl-cffi": "^0.1.49",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "happy-dom": "^20.9.0",
     "minisearch": "^7.2.0",
-    "node-html-markdown": "^1.3.0",
+    "node-html-markdown": "^2.0.0",
     "quick-lru": "^7.3.0",
     "undici": "^6.20.1"
   },
@@ -63,8 +65,8 @@
     "c8": "^10.1.3",
     "cross-env": "^10.1.0",
     "shx": "^0.4.0",
-    "supertest": "^7.1.4",
-    "tsx": "^4.20.5",
+    "supertest": "^7.2.2",
+    "tsx": "^4.22.3",
     "typescript": "^5.8.3"
   }
 }

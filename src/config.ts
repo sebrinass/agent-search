@@ -1,7 +1,17 @@
+import 'dotenv/config';
+
 /**
  * 统一配置管理模块
  * 集中管理所有环境变量，避免重复定义
  */
+
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+
+// ============ 项目根目录 ============
+// 从当前文件位置推导项目根目录（src/config.ts → 项目根）
+const __filename = fileURLToPath(import.meta.url);
+const PROJECT_ROOT = path.resolve(path.dirname(__filename), "..");
 
 // ============ 嵌入相关配置 ============
 export const EMBEDDING_API_KEY = process.env.EMBEDDING_API_KEY || '';
@@ -56,49 +66,9 @@ export const NO_PROXY = process.env.NO_PROXY || process.env.no_proxy;
 export const USER_AGENT = process.env.USER_AGENT;
 export const SEARXNG_URL = process.env.SEARXNG_URL;
 
-// ============ 配置导出函数 ============
-export function getEmbeddingConfig() {
-  return {
-    enabled: isEmbeddingEnabled,
-    baseUrl: EMBEDDING_BASE_URL || 'not configured',
-    model: EMBEDDING_MODEL,
-    timeoutMs: EMBEDDING_TIMEOUT_MS,
-    topK: TOP_K,
-    rrfK: RRF_K
-  };
-}
+// ============ 黑名单相关配置 ============
+/** 黑名单文件路径，默认为项目根目录的 blacklist.md，可通过环境变量覆盖 */
+export const BLACKLIST_PATH = process.env.BLACKLIST_PATH || path.join(PROJECT_ROOT, "blacklist.md");
 
-export function getResearchConfig() {
-  return {
-    maxKeywords: MAX_KEYWORDS,
-    searchTimeoutMs: SEARCH_TIMEOUT_MS,
-    maxDescriptionLength: MAX_DESCRIPTION_LENGTH
-  };
-}
-
-export function getSearchConfig() {
-  return {
-    searchPages: SEARCH_PAGES,
-    searchEngines: SEARCH_ENGINES,
-    searchTimeoutMs: SEARCH_TIMEOUT_MS,
-    searchLanguage: SEARCH_LANGUAGE,
-    safeSearch: SAFE_SEARCH
-  };
-}
-
-export function getUrlReaderConfig() {
-  return {
-    fetchTimeoutMs: FETCH_TIMEOUT_MS,
-    enableJsRender: ENABLE_JS_RENDER,
-    enableReadability: ENABLE_READABILITY
-  };
-}
-
-export function getCacheConfig() {
-  return {
-    linkDedupTtl: LINK_DEDUP_TTL,
-    urlCacheTtl: URL_CACHE_TTL,
-    urlCacheSize: URL_CACHE_SIZE,
-    embeddingCacheSize: EMBEDDING_CACHE_SIZE
-  };
-}
+/** 导出项目根目录，供其他模块使用 */
+export { PROJECT_ROOT };

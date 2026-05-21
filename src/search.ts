@@ -36,7 +36,8 @@ export async function fetchSinglePage(
   time_range?: string,
   language: string = "all",
   safesearch?: number,
-  site?: string
+  site?: string,
+  category?: string
 ): Promise<Array<{ title: string; content: string; url: string; score: number }>> {
   if (!SEARXNG_URL) {
     throw createConfigurationError(
@@ -85,6 +86,11 @@ export async function fetchSinglePage(
 
   if (safesearch !== undefined && [0, 1, 2].includes(safesearch)) {
     url.searchParams.set("safesearch", safesearch.toString());
+  }
+
+  // 垂直搜索分类：限定搜索范围到特定类别
+  if (category) {
+    url.searchParams.set("categories", category);
   }
 
   const requestOptions: RequestInit = {

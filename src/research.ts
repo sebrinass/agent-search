@@ -13,13 +13,15 @@ import { logMessage } from "./logging.js";
 import { fetchSinglePage } from "./search.js";
 import { rerankWithHybridSearch, type SearchResult } from "./embedding.js";
 import { addLinksToDedup, isLinkDuplicate } from "./cache.js";
+import { loadBlacklist, isBlacklisted } from "./blacklist.js";
 import {
   MAX_KEYWORDS,
   SEARCH_TIMEOUT_MS,
   MAX_DESCRIPTION_LENGTH,
   SEARCH_PAGES,
   SEARCH_LANGUAGE,
-  SAFE_SEARCH
+  SAFE_SEARCH,
+  isEmbeddingEnabled
 } from "./config.js";
 
 // ============ 类型定义 ============
@@ -33,7 +35,7 @@ export interface SearchInput {
   time_range?: string;
   lang?: string;
   safeSearch?: number;
-  mode?: 'fast' | 'embedding';
+  category?: string;
 }
 
 /**
@@ -90,7 +92,7 @@ export class ResearchServer {
    * 执行单个关键词搜索
    * 使用 fetchSinglePage 获取多页结果，集成混合检索和链接去重
    */
-  private async searchKeyword(keyword: string, site?: string, time_range?: string, lang?: string, safeSearch?: number, mode?: 'fast' | 'embedding'): Promise<KeywordSearchResult> {
+  private async searchKeyword(keyword: string, site?: string, time_range?: string, lang?: string, safeSearch?: number, category?: string): Promise<KeywordSearchResult> {
     if (!this.server) {
       return {
         keyword,
@@ -103,11 +105,12 @@ export class ResearchServer {
       const effectiveLang = lang || SEARCH_LANGUAGE;
       const effectiveSafeSearch = safeSearch !== undefined ? safeSearch : SAFE_SEARCH;
 
-      const pagesToFetch = mode === 'embedding' ? SEARCH_PAGES : 1;
+      // 自动判断：配置了嵌入模型则搜多页，否则只搜1页
+      const pagesToFetch = isEmbeddingEnabled ? SEARCH_PAGES : 1;
 
       const pagePromises: Promise<Array<{ title: string; content: string; url: string; score: number }>>[] = [];
       for (let page = 1; page <= pagesToFetch; page++) {
-        pagePromises.push(fetchSinglePage(this.server, keyword, page, time_range, effectiveLang, effectiveSafeSearch, site));
+        pagePromises.push(fetchSinglePage(this.server, keyword, page, time_range, effectiveLang, effectiveSafeSearch, site, category));
       }
 
       const pageResults = await Promise.all(pagePromises);
@@ -131,7 +134,23 @@ export class ResearchServer {
         };
       }
 
-      const rerankedResults = await rerankWithHybridSearch(keyword, rawResults, mode);
+      // 黑名单过滤：在 embedding 之前过滤，节省 API 调用
+      const blacklist = loadBlacklist();
+      const beforeCount = rawResults.length;
+      const filteredResults = rawResults.filter(result => !isBlacklisted(result.url, blacklist));
+      const filteredCount = beforeCount - filteredResults.length;
+      if (filteredCount > 0 && this.server) {
+        logMessage(this.server, "info", `Research: 黑名单过滤了 ${filteredCount} 条结果（关键词: "${keyword}"）`);
+      }
+
+      if (filteredResults.length === 0) {
+        return {
+          keyword,
+          results: []
+        };
+      }
+
+      const rerankedResults = await rerankWithHybridSearch(keyword, filteredResults);
 
       const dedupedResults: SearchResultItem[] = [];
       const newUrls: string[] = [];
@@ -176,7 +195,7 @@ export class ResearchServer {
     time_range?: string,
     lang?: string,
     safeSearch?: number,
-    mode?: 'fast' | 'embedding'
+    category?: string
   ): Promise<KeywordSearchResult[]> {
     const limitedKeywords = keywords.slice(0, MAX_KEYWORDS);
 
@@ -195,7 +214,7 @@ export class ResearchServer {
         setTimeout(() => reject(new Error('搜索超时')), SEARCH_TIMEOUT_MS);
       });
 
-      const searchPromise = this.searchKeyword(keyword, site, time_range, lang, safeSearch, mode);
+      const searchPromise = this.searchKeyword(keyword, site, time_range, lang, safeSearch, category);
 
       try {
         return await Promise.race([searchPromise, timeoutPromise]);
@@ -226,7 +245,7 @@ export class ResearchServer {
       let searchResults: KeywordSearchResult[] | undefined;
 
       if (input.searchedKeywords && input.searchedKeywords.length > 0) {
-        searchResults = await this.searchKeywords(input.searchedKeywords, input.site, input.time_range, input.lang, input.safeSearch, input.mode);
+        searchResults = await this.searchKeywords(input.searchedKeywords, input.site, input.time_range, input.lang, input.safeSearch, input.category);
       }
 
       const result: ResearchResult = {};
@@ -258,19 +277,14 @@ export class ResearchServer {
  */
 export const SEARCH_TOOL: Tool = {
   name: "search",
-  description: `并发搜索
-
-功能：
-1. 多关键词并发搜索（最多3个）
-2. 站点、时间范围、语言过滤
-3. 两种搜索模式：fast（默认，快速，日常）和 embedding（精准，慢速，高相关性，深度搜索）`,
+  description: `搜索互联网获取信息。自动根据是否配置嵌入模型选择搜索策略：配置了嵌入模型时使用语义增强搜索（多页+混合检索），未配置时使用快速搜索（单页+关键词匹配）。支持按分类限定搜索范围`,
   inputSchema: {
     type: "object",
     properties: {
       searchedKeywords: {
         type: "array",
         items: { type: "string" },
-        description: "要搜索的关键词列表（最多3个并发）"
+        description: "搜索关键词列表，强烈建议提供2-3个关键词以获得最佳并发搜索效果。单关键词搜索效率较低，多个关键词可并行搜索不同角度。最多3个并发"
       },
       site: {
         type: "string",
@@ -290,10 +304,10 @@ export const SEARCH_TOOL: Tool = {
         enum: [0, 1, 2],
         description: "安全搜索级别：0=关闭，1=中等，2=严格"
       },
-      mode: {
+      category: {
         type: "string",
-        enum: ["fast", "embedding"],
-        description: "搜索模式：fast=快速搜索(1页+BM25)，embedding=精准搜索(多页+RRF混合检索，需配置嵌入模型)"
+        description: "搜索分类，限定搜索范围。可选值: general(通用), news(新闻), science(学术), it(技术/编程), images(图片), videos(视频), files(文件), music(音乐)。不指定则使用通用搜索",
+        enum: ["general", "news", "science", "it", "images", "videos", "files", "music"]
       }
     },
     required: ["searchedKeywords"]

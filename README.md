@@ -36,6 +36,15 @@
 docker run -d --name searxng -p 8080:8080 searxng/searxng:latest
 ```
 
+### 环境变量配置
+
+支持通过 `.env` 文件配置环境变量（推荐）：
+
+```bash
+cp .env.example .env
+# 编辑 .env 文件填入你的配置
+```
+
 ### 方式一：Docker（推荐）
 
 ```bash
@@ -65,10 +74,11 @@ agent-search
 - `searchedKeywords` — 搜索关键词列表（最多 3 个并发）
 
 **可选参数：**
-- `mode` — 搜索模式，`fast`=快速搜索(默认)，`embedding`=精准搜索(需配置嵌入模型)
+- `category` — 搜索分类（general, news, science, it, images, videos, files, music）
 - `site` — 限制搜索域名
 - `time_range` — 时间范围过滤（day, month, year）
 - `lang` — 搜索语言（如 en, zh, all）
+- `safeSearch` — 安全搜索级别（0=关闭，1=中等，2=严格）
 
 ### read — URL 内容提取
 
@@ -93,7 +103,9 @@ agent-search
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `EMBEDDING_BASE_URL` | - | Embedding API 端点（启用混合检索） |
+| `EMBEDDING_BASE_URL` | - | Embedding API 端点（启用混合检索），推荐配合 **jina-embeddings-v5-text-nano** 模型使用 |
+
+> **智能模式切换**：无需手动指定搜索模式。当配置了 `EMBEDDING_BASE_URL` 时，自动启用混合检索（Embedding 重排序）；未配置时自动使用纯文本检索模式。
 | `EMBEDDING_TIMEOUT_MS` | 90000 | 嵌入模型超时（毫秒），超时后降级为纯文本检索 |
 | `MCP_HTTP_PORT` | - | HTTP 模式端口 |
 | `SEARCH_TIMEOUT_MS` | EMBEDDING_TIMEOUT + 10s | 搜索超时（毫秒） |
@@ -142,7 +154,7 @@ SEARXNG_URL=http://localhost:8080 agent-search search -q "TypeScript" --lang en 
 SEARXNG_URL=http://localhost:8080 agent-search search -q "RAG 技术" --json
 
 # 详细输出
-SEARXNG_URL=http://localhost:8080 agent-search search -q "RAG 技术" -v
+SEARXNG_URL=http://localhost:8080 agent-search -v search -q "RAG 技术"
 ```
 
 **选项：**
@@ -150,13 +162,17 @@ SEARXNG_URL=http://localhost:8080 agent-search search -q "RAG 技术" -v
 | 选项 | 说明 |
 |------|------|
 | `-q, --query <keywords...>` | 搜索关键词（必填，最多 3 个） |
-| `--mode <mode>` | 搜索模式: fast, embedding（默认 fast） |
 | `-s, --site <domain>` | 限制搜索域名 |
 | `--time-range <range>` | 时间范围: day, month, year |
 | `--lang <language>` | 搜索语言（默认 all） |
 | `--safe-search <level>` | 安全搜索级别: 0, 1, 2（默认 0） |
-| `-v, --verbose` | 显示详细输出 |
 | `--json` | 以 JSON 格式输出结果 |
+
+### 全局选项
+
+| 选项 | 说明 |
+|------|------|
+| `-v, --verbose` | 显示详细输出（适用于所有子命令） |
 
 ### read — URL 内容读取
 

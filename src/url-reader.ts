@@ -18,6 +18,25 @@ import {
   ENABLE_READABILITY
 } from "./config.js";
 
+// ============ curl-cffi 懒加载 ============
+let curlCffiModule: typeof import('curl-cffi') | null = null;
+let curlCffiAvailable: boolean | null = null;
+
+async function getCurlCffi() {
+  if (curlCffiAvailable !== null) {
+    return curlCffiAvailable ? curlCffiModule : null;
+  }
+  try {
+    curlCffiModule = await import('curl-cffi');
+    curlCffiAvailable = true;
+    logMessage(null, 'info', 'curl-cffi loaded successfully, using browser TLS fingerprint for requests');
+  } catch (e) {
+    curlCffiAvailable = false;
+    logMessage(null, 'info', 'curl-cffi not available, falling back to native fetch');
+  }
+  return curlCffiAvailable ? curlCffiModule : null;
+}
+
 // ============ 类型定义 ============
 export interface PaginationOptions {
   startChar?: number;
@@ -334,6 +353,58 @@ async function fetchHtmlContent(
   url: string,
   timeoutMs: number
 ): Promise<FetchResult> {
+  // 尝试使用 curl-cffi
+  const curlCffi = await getCurlCffi();
+
+  if (curlCffi) {
+    try {
+      const requestOptions: Record<string, unknown> = {
+        impersonate: "chrome136",
+        timeout: timeoutMs,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+        },
+      };
+
+      // Add proxy if configured
+      const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy;
+      if (proxyUrl) {
+        requestOptions.proxy = proxyUrl;
+      }
+
+      const response = await curlCffi.fetch(url, requestOptions);
+
+      if (response.status !== 200) {
+        let responseBody: string;
+        try {
+          responseBody = response.text || '[Could not read response body]';
+        } catch {
+          responseBody = '[Could not read response body]';
+        }
+
+        const context: ErrorContext = { url };
+        throw createServerError(response.status, '', responseBody, context);
+      }
+
+      const htmlContent = response.text;
+
+      if (!htmlContent || htmlContent.trim().length === 0) {
+        throw createContentError("Website returned empty content.", url);
+      }
+
+      return {
+        htmlContent,
+        source: 'fetch'
+      };
+    } catch (error: any) {
+      // curl-cffi 失败，降级到原生 fetch
+      logMessage(server, 'warning', `curl-cffi failed for: ${url} - ${error.message}, falling back to native fetch`);
+    }
+  }
+
+  // 降级：使用原生 fetch
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -607,30 +678,4 @@ export async function fetchAndConvertToMarkdown(
   return fetchMultipleUrls(server, urls, timeoutMs, options);
 }
 
-// ============ 导出辅助函数 ============
-/**
- * 解析 URL 输入为 URL 数组
- */
-export function parseUrlInput(urlOrUrls: string | string[]): string[] {
-  if (typeof urlOrUrls === 'string') {
-    if (urlOrUrls.includes('|')) {
-      return urlOrUrls.split('|').map(u => u.trim()).filter(u => u.length > 0);
-    }
-    return [urlOrUrls];
-  }
-  return urlOrUrls;
-}
 
-/**
- * 检查 URL 是否已缓存
- */
-export function isUrlCached(url: string): boolean {
-  return urlContentCache.has(url);
-}
-
-/**
- * 检查 URL 是否在去重池中
- */
-export function isUrlDeduplicated(url: string): boolean {
-  return linkDedupPool.isDuplicate(url);
-}

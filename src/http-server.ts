@@ -5,31 +5,12 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { packageVersion } from "./version.js";
+import { createMcpServer } from "./mcp-main.js";
 import { ResearchServer } from "./research.js";
-import { registerRequestHandlers } from "./tool-handlers.js";
 import { ALLOWED_ORIGINS } from "./config.js";
 
 function createServerInstance(): { server: Server; researchServer: ResearchServer } {
-  const server = new Server(
-    {
-      name: "augmented-search",
-      version: packageVersion,
-    },
-    {
-      capabilities: {
-        logging: {},
-        resources: {},
-        tools: {},
-      },
-    }
-  );
-
-  const researchServer = new ResearchServer();
-  researchServer.setServer(server);
-
-  registerRequestHandlers(server, researchServer);
-
-  return { server, researchServer };
+  return createMcpServer();
 }
 
 interface SessionState {

@@ -1,13 +1,13 @@
 ---
 name: "performing-searches"
 description: "Provides concurrent web search capabilities for Agents with hybrid retrieval. Supports searching multiple keywords simultaneously, Embedding re-ranking to improve relevance to ~80%. Use when users need to search the web, look up information, or mention SearXNG, MCP search, or local search."
-version: "0.1.0"
+version: "0.2.0"
 author: "sebrinass"
 tags: ["search", "mcp", "searxng", "agent", "local"]
 category: "search"
 tools:
   - name: search
-    description: "并发搜索工具，支持多关键词并发搜索、站点/时间/语言过滤，以及 fast/embedding 两种搜索模式"
+    description: "并发搜索工具，支持多关键词并发搜索、站点/时间/语言/分类过滤，自动根据嵌入模型配置选择搜索策略"
     inputSchema:
       type: "object"
       properties:
@@ -17,19 +17,14 @@ tools:
             type: "string"
           minItems: 1
           maxItems: 3
-          description: "搜索关键词列表（最多3个并发）"
-        mode:
+          description: "必须提供 2-3 个不同角度的关键词以获得最佳效果。单关键词搜索效率较低，多个关键词可并行搜索不同角度。最多3个并发"
+        category:
           type: "string"
-          enum: ["fast", "embedding"]
-          default: "fast"
-          description: "搜索模式：fast=快速搜索(默认)，embedding=精准搜索(需配置嵌入模型)"
+          enum: ["general", "news", "science", "it", "images", "videos", "files", "music"]
+          description: "搜索分类：general=通用，news=新闻，science=学术，it=技术/编程，images=图片，videos=视频，files=文件，music=音乐"
         site:
           type: "string"
           description: "限制搜索范围到具体网站域名"
-        time_range:
-          type: "string"
-          enum: ["day", "month", "year"]
-          description: "时间范围过滤：day=最近一天，month=最近一月，year=最近一年"
         lang:
           type: "string"
           description: "搜索语言（如 en, zh, all）"
@@ -37,6 +32,10 @@ tools:
           type: "number"
           enum: [0, 1, 2]
           description: "安全搜索级别：0=关闭，1=中等，2=严格"
+        time_range:
+          type: "string"
+          enum: ["day", "month", "year"]
+          description: "时间范围过滤：day=最近一天，month=最近一月，year=最近一年"
       required: ["searchedKeywords"]
   - name: read
     description: "读取 URL 内容，支持 JS 渲染降级和正文提取"
@@ -57,12 +56,15 @@ tools:
         section:
           type: "string"
           description: "提取指定章节"
-        paragraphRange:
-          type: "string"
-          description: "段落范围（如 1-5, 3, 10-）"
         readHeadings:
           type: "boolean"
           description: "仅返回标题列表"
+        paragraphRange:
+          type: "string"
+          description: "段落范围（如 1-5, 3, 10-）"
+        timeoutMs:
+          type: "number"
+          description: "请求超时（毫秒）"
       required: ["urls"]
 env:
   required:
@@ -70,42 +72,20 @@ env:
       description: "SearXNG 实例地址"
       example: "http://localhost:8080"
   optional:
-    - name: "EMBEDDING_API_KEY"
-      description: "Embedding API 密钥（启用混合检索）"
     - name: "EMBEDDING_BASE_URL"
-      description: "Embedding API 端点（OpenAI 兼容）"
-    - name: "EMBEDDING_MODEL"
-      description: "嵌入模型名称"
-      default: "nomic-embed-text"
+      description: "Embedding API 端点（OpenAI 兼容，配置后启用语义增强搜索）"
     - name: "MCP_HTTP_PORT"
-      description: "HTTP 模式端口"
-      default: "3000"
-    - name: "AUTH_USERNAME"
-      description: "Basic Auth 用户名"
-    - name: "AUTH_PASSWORD"
-      description: "Basic Auth 密码"
+      description: "HTTP 模式端口（未设置时不启用 HTTP 模式）"
     - name: "SEARCH_TIMEOUT_MS"
       description: "搜索超时（毫秒）"
-      default: "100000"
-    - name: "SEARCH_PAGES"
-      description: "搜索页数"
-      default: "1"
-    - name: "SEARCH_ENGINES"
-      description: "指定搜索引擎（逗号分隔）"
-    - name: "SEARCH_LANGUAGE"
-      description: "搜索语言"
-      default: "all"
-    - name: "HTTP_PROXY"
-      description: "HTTP 代理地址"
-    - name: "HTTPS_PROXY"
-      description: "HTTPS 代理地址"
+      default: "EMBEDDING_TIMEOUT + 10s"
 source: "https://github.com/sebrinass/agent-search"
 homepage: "https://github.com/sebrinass/agent-search"
 ---
 
 # Agent Search
 
-为 Agent 提供高效的本地联网搜索能力。
+为 Agent 提供高效的本地联网搜索能力，支持混合检索和链接去重。
 
 ## 快速开始
 
@@ -123,38 +103,125 @@ docker run -d --name agent-search -p 3000:3000 \
 **npm 方式**:
 
 ```bash
-npm install -g agent-search
+npm install -g agent-local-search
 SEARXNG_URL=http://localhost:8080 agent-search
 ```
 
-## 提供的工具
+## 工具概览
 
 ### search — 并发搜索
 
-支持混合检索和链接去重，一次请求最多搜索 3 个关键词。
+支持混合检索，一次请求最多搜索 3 个关键词。自动根据是否配置嵌入模型选择搜索策略：
+
+- **配置了 `EMBEDDING_BASE_URL`** → 语义增强搜索（多页+BM25+语义RRF），相关性约 80%
+- **未配置** → 快速搜索（单页+仅BM25），相关性约 50%
 
 **必填参数：**
-- `searchedKeywords` — 搜索关键词列表（最多 3 个并发）
+- `searchedKeywords` — **必须提供 2-3 个不同角度的关键词**以获得最佳效果（最多 3 个并发）
 
-**可选参数：**
-- `mode` — 搜索模式，`fast`=快速搜索(默认)，`embedding`=精准搜索(需配置嵌入模型)
+**常用可选参数：**
+- `category` — 搜索分类（general, news, science, it, images, videos, files, music）
 - `site` — 限制搜索域名
-- `time_range` — 时间范围过滤（day, month, year）
 - `lang` — 搜索语言（如 en, zh, all）
 - `safeSearch` — 安全搜索级别（0=关闭，1=中等，2=严格）
-
-**使用建议：** 一般问题或简单搜索用 `fast` 模式（默认），需要深度搜索时可启用 `embedding` 模式。
+- `time_range` — 时间范围（day, month, year）
 
 ### read — URL 内容提取
 
 读取网页内容，支持 JS 渲染降级和正文提取。
 
-**参数：**
-- `urls` — URL 数组
+**必填参数：**
+- `urls` — URL 数组（支持批量读取）
+
+**常用可选参数：**
 - `startChar` / `maxLength` — 分页读取
 - `section` — 提取指定章节
-- `paragraphRange` — 段落范围
 - `readHeadings` — 仅返回标题列表
+
+## 最佳实践
+
+### 🔑 关键词策略（重要！）
+
+**必须提供 2-3 个不同角度的关键词**，这是获得高质量搜索结果的关键：
+
+- ✅ **好**: `["React 性能优化", "React rendering optimization", "React slow component"]`
+- ❌ **差**: `["React"]`
+
+多关键词可以并行搜索不同角度，显著提升结果覆盖面和相关性。
+
+### 分类选择建议
+
+根据任务类型选择合适的分类：
+- 学术研究 → `science`
+- 技术问题/编程 → `it`
+- 新闻资讯 → `news`
+- 通用搜索 → 不指定（默认 `general`）
+
+## CLI 使用
+
+安装后通过 `agent-search` 命令使用，支持 `.env` 文件配置环境变量。
+
+### search — 网络搜索
+
+```bash
+# 基本搜索
+agent-search search -q "RAG 技术"
+
+# 多关键词并发搜索（优先推荐）
+agent-search search -q "RAG" "向量数据库" "Embedding"
+
+# 限制域名和时间范围
+agent-search search -q "React 19" --site github.com --time-range month
+
+# 指定分类和语言
+agent-search search -q "TypeScript" --category it --lang en
+
+# JSON 格式输出
+agent-search search -q "RAG 技术" --json
+
+# 详细输出
+agent-search -v search -q "RAG 技术"
+```
+
+**选项：**
+
+| 选项 | 说明 |
+|------|------|
+| `-q, --query <keywords...>` | 搜索关键词（必填，最多 3 个） |
+| `-c, --category <cat>` | 搜索分类: general, news, science, it, images, videos, files, music |
+| `-s, --site <domain>` | 限制搜索域名 |
+| `--time-range <range>` | 时间范围: day, month, year |
+| `--lang <language>` | 搜索语言（默认 all） |
+| `--safe-search <level>` | 安全搜索级别: 0, 1, 2（默认 0） |
+| `--json` | 以 JSON 格式输出结果 |
+
+### read — URL 内容读取
+
+```bash
+# 读取单个 URL
+agent-search read https://example.com
+
+# 读取多个 URL
+agent-search read https://example.com https://example.org
+
+# 分页读取
+agent-search read https://example.com --start-char 1000 --max-length 5000
+
+# 提取指定章节
+agent-search read https://example.com --section "Installation"
+
+# 段落范围
+agent-search read https://example.com --paragraph-range 1-5
+
+# 仅返回标题列表
+agent-search read https://example.com --headings
+```
+
+### 全局选项
+
+| 选项 | 说明 |
+|------|------|
+| `-v, --verbose` | 显示详细输出（适用于所有子命令） |
 
 ## 配置
 
@@ -168,53 +235,34 @@ SEARXNG_URL=http://localhost:8080 agent-search
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `EMBEDDING_BASE_URL` | - | Embedding API 端点（启用混合检索） |
-| `MCP_HTTP_PORT` | - | HTTP 模式端口 |
-| `SEARCH_TIMEOUT_MS` | 100000 | 搜索超时（毫秒） |
+| `EMBEDDING_BASE_URL` | - | Embedding API 端点（配置后自动启用语义增强搜索） |
+| `MCP_HTTP_PORT` | - | HTTP 模式端口（未设置时不启用） |
+| `SEARCH_TIMEOUT_MS` | EMBEDDING_TIMEOUT + 10s | 搜索超时（毫秒） |
 
-完整配置请参阅 [GitHub 仓库配置文档](https://github.com/sebrinass/agent-search/blob/main/docs/configuration.md)。
+完整配置请参阅 [GitHub 配置参考](https://github.com/sebrinass/agent-search/blob/main/docs/configuration.md)。
 
-## 性能建议
+### 域名黑名单
 
-| 模式 | 页数 | 超时 | 相关性 |
-|------|------|------|--------|
-| 纯文本 | 1 | 10-15秒 | ~50% |
-| 混合检索 | 3 | 30-60秒 | ~80% |
+项目根目录的 `blacklist.md` 文件支持域名过滤，搜索结果中匹配的 URL 将被自动排除。
 
-**其他建议：**
-- 搜索关键词并发不超过 3 个
-- 在 SearXNG 配置中过滤视频网站以提升结果质量
+**格式规则：**
+- 每行一个一级域名（支持子域名匹配）
+- 以 `#` 开头的行为注释
+- 修改后下一轮搜索立即生效（无需重启）
 
-## 工具使用示例
+**特殊说明：**
+- `bilibili.com` — **只过滤 `/video/` 开头的URL**（视频页面），其他页面（如专栏、动态）正常显示
+- 默认包含 `douyin.com` + 字典网站等常见低质量域名
 
-### 使用 mcporter 调用
-
-```bash
-# 列出工具
-mcporter list http://localhost:3000/mcp
-
-# 调用搜索
-mcporter call http://localhost:3000/mcp.search \
-  searchedKeywords='["hello world"]'
-
-# 调用 URL 读取
-mcporter call http://localhost:3000/mcp.read \
-  urls='["https://example.com"]'
+```markdown
+# 域名黑名单示例
+bilibili.com  # 只过滤视频页面
+douyin.com
 ```
 
-## 详细安装
+## 参考链接
 
-完整安装指南请参阅 [GitHub 安装文档](https://github.com/sebrinass/agent-search/blob/main/skill/reference/installation.md)，包含：
-- Docker 完整安装
-- npm + 已有 SearXNG
-- SearXNG 配置详解
-- OpenClaw 集成
-- 常见问题
-
-## 资源链接
-
-- [安装指南](https://github.com/sebrinass/agent-search/blob/main/skill/reference/installation.md) — 完整安装说明
+- [安装指南](https://github.com/sebrinass/agent-search/blob/main/skill/reference/installation.md) — 完整安装说明和 SearXNG 配置
 - [配置参考](https://github.com/sebrinass/agent-search/blob/main/docs/configuration.md) — 完整环境变量说明
-- [GitHub 仓库](https://github.com/sebrinass/agent-search)
-- [SearXNG 文档](https://docs.searxng.org)
-- [Docker 镜像](https://ghcr.io/sebrinass/agent-search)
+- [GitHub 仓库](https://github.com/sebrinass/agent-search) — 源码和 Issue
+- [SearXNG 文档](https://docs.searxng.org) — 搜索引擎配置

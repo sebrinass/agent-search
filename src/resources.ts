@@ -63,6 +63,7 @@ export function createHelpResource() {
 - \`time_range\`: 时间范围过滤（day, month, year）
 - \`lang\`: 搜索语言（如 en, zh, all）
 - \`safeSearch\`: 安全搜索级别（0=关闭，1=中等，2=严格）
+- \`category\`: 搜索分类（general, news, science, it, images, videos, files, music）
 
 ### 2. read
 读取 URL 内容，支持 JS 渲染降级和正文提取。

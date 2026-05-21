@@ -22,7 +22,6 @@ import {
   TOP_K,
   RRF_K,
   isEmbeddingEnabled,
-  getEmbeddingConfig,
   EMBEDDING_TIMEOUT_MS
 } from './config.js';
 import { logMessage } from './logging.js';
@@ -113,11 +112,44 @@ function miniSearchRetrieve(
   }));
 }
 
+// ============ Jina v5 Task LoRA 前缀 ============
+
+/** 检测是否为 Jina v5 模型（需要 Task LoRA 前缀） */
+let _jinaV5Detected: boolean | null = null;
+function isJinaV5(): boolean {
+  if (_jinaV5Detected === null) {
+    const model = EMBEDDING_MODEL.toLowerCase();
+    _jinaV5Detected = model.includes('jina') && model.includes('v5');
+    if (_jinaV5Detected) {
+      logMessage(null, 'info', `Jina v5 Task LoRA: 已激活 (模型: ${EMBEDDING_MODEL}，Query/Document 前缀自动添加)`);
+    }
+  }
+  return _jinaV5Detected;
+}
+
+/** 为 Jina v5 添加 Task LoRA 前缀 */
+function applyTaskLoRAPrefix(text: string, type: 'query' | 'document'): string {
+  if (!isJinaV5()) return text;
+  return type === 'query' ? `Query: ${text}` : `Document: ${text}`;
+}
+
+// ============ 嵌入文本最大长度 ============
+/** 发送给嵌入 API 的文本最大字符数，超出部分截断 */
+const EMBEDDING_MAX_TEXT_LENGTH = 800;
+
 // ============ OpenAI 兼容 API 嵌入 ============
-async function getOpenAIEmbedding(text: string): Promise<number[]> {
+async function getOpenAIEmbedding(text: string, type: 'query' | 'document' = 'query'): Promise<number[]> {
   if (!text || text.trim() === '') {
     return [];
   }
+
+  // 文本截断：在添加 Task LoRA 前缀之前截断，避免超长文本浪费 token
+  if (text.length > EMBEDDING_MAX_TEXT_LENGTH) {
+    text = text.slice(0, EMBEDDING_MAX_TEXT_LENGTH);
+  }
+
+  // Jina v5 Task LoRA: 自动添加前缀
+  const prefixedText = applyTaskLoRAPrefix(text, type);
 
   const cached = embeddingCache.get(text);
   if (cached) {
@@ -141,41 +173,59 @@ async function getOpenAIEmbedding(text: string): Promise<number[]> {
     headers['Authorization'] = `Bearer ${EMBEDDING_API_KEY}`;
   }
 
+  // 429 重试：最多重试3次，指数退避（1秒、2秒、4秒）
+  const MAX_429_RETRIES = 3;
+
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), EMBEDDING_TIMEOUT_MS);
-    
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model: EMBEDDING_MODEL,
-        input: text,
-      }),
-      signal: controller.signal,
-    });
-    
-    clearTimeout(timeoutId);
-    
+    let response!: Response;
+
+    for (let attempt = 0; attempt <= MAX_429_RETRIES; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), EMBEDDING_TIMEOUT_MS);
+
+      response = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: EMBEDDING_MODEL,
+          input: prefixedText,
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      // 429 限流：指数退避重试
+      if (response.status === 429 && attempt < MAX_429_RETRIES) {
+        const waitMs = 1000 * Math.pow(2, attempt); // 1秒、2秒、4秒
+        logMessage(null, 'info', `嵌入 API 限流(429)，第${attempt + 1}次重试，等待${waitMs}ms...`);
+        await new Promise(resolve => setTimeout(resolve, waitMs));
+        continue;
+      }
+
+      // 非429或已达到最大重试次数，跳出循环
+      break;
+    }
+
     if (!response.ok) {
       const errorText = await response.text();
       logMessage(null, 'error', `Embedding API error: ${response.status} ${response.statusText} - ${errorText}`);
       return [];
     }
-    
-    const data = await response.json() as { 
-      data?: Array<{ embedding?: number[] }> 
+
+    const data = await response.json() as {
+      data?: Array<{ embedding?: number[] }>
     };
-    
+
     const embedding = data.data?.[0]?.embedding;
-    
+
     if (!embedding || embedding.length === 0) {
       logMessage(null, 'error', 'No embedding returned from API');
       return [];
     }
-    
+
     embeddingCache.set(text, embedding);
-    
+
     return embedding;
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
@@ -187,8 +237,8 @@ async function getOpenAIEmbedding(text: string): Promise<number[]> {
   }
 }
 
-export async function getEmbedding(text: string): Promise<number[]> {
-  return getOpenAIEmbedding(text);
+export async function getEmbedding(text: string, type: 'query' | 'document' = 'query'): Promise<number[]> {
+  return getOpenAIEmbedding(text, type);
 }
 
 // ============ 余弦相似度 ============
@@ -217,12 +267,37 @@ export function cosineSimilarity(a: number[], b: number[]): number {
   return dotProduct / (magnitudeA * magnitudeB);
 }
 
+// ============ 并发控制 ============
+/**
+ * 限制异步任务的并发数
+ * 使用信号量模式，最多同时运行 limit 个任务
+ */
+async function limitConcurrency<T>(
+  tasks: (() => Promise<T>)[],
+  limit: number
+): Promise<T[]> {
+  const results: T[] = new Array(tasks.length);
+  let nextIndex = 0; // 下一个待执行的任务索引
+
+  async function worker(): Promise<void> {
+    while (nextIndex < tasks.length) {
+      const index = nextIndex++;
+      results[index] = await tasks[index]();
+    }
+  }
+
+  // 启动 limit 个工作协程，它们会自行从队列中取任务
+  const workers = Array.from({ length: Math.min(limit, tasks.length) }, () => worker());
+  await Promise.all(workers);
+  return results;
+}
+
 // ============ 语义检索 ============
 async function semanticRetrieve(
   query: string,
   results: SearchResult[]
 ): Promise<{ result: SearchResult; score: number; rank: number }[]> {
-  const queryEmbedding = await getEmbedding(query);
+  const queryEmbedding = await getEmbedding(query, 'query');
   
   if (queryEmbedding.length === 0) {
     return results.map((result, rank) => ({
@@ -232,15 +307,17 @@ async function semanticRetrieve(
     }));
   }
   
-  const scored = await Promise.all(
-    results.map(async (result) => {
+  // 并发控制：最多同时10个嵌入请求，避免触发 API 限流
+  const scored = await limitConcurrency(
+    results.map((result) => async () => {
       const docText = `${result.title} ${result.content}`;
-      const docEmbedding = await getEmbedding(docText);
+      const docEmbedding = await getEmbedding(docText, 'document');
       const score = cosineSimilarity(queryEmbedding, docEmbedding);
       return { result, score };
-    })
+    }),
+    5
   );
-  
+
   scored.sort((a, b) => b.score - a.score);
   
   return scored.map((item, rank) => ({
@@ -299,10 +376,15 @@ function rrfFusion(
 }
 
 // ============ 主函数 ============
+/**
+ * 混合检索重排序
+ * 自动根据 isEmbeddingEnabled 决定检索策略：
+ * - 已配置嵌入模型 → BM25+语义 RRF 融合
+ * - 未配置 → 仅 BM25
+ */
 export async function rerankWithHybridSearch(
   query: string,
-  results: SearchResult[],
-  mode?: 'fast' | 'embedding'
+  results: SearchResult[]
 ): Promise<ScoredResult[]> {
   if (results.length <= TOP_K) {
     return results.map((result, index) => ({
@@ -312,8 +394,9 @@ export async function rerankWithHybridSearch(
       semanticRank: index + 1
     }));
   }
-  
-  if (!(mode === 'embedding' && isEmbeddingEnabled)) {
+
+  // 未配置嵌入模型，仅使用 BM25 检索
+  if (!isEmbeddingEnabled) {
     const bm25Results = miniSearchRetrieve(query, results);
     return bm25Results.slice(0, TOP_K).map(item => ({
       ...item.result,
@@ -322,13 +405,14 @@ export async function rerankWithHybridSearch(
       semanticRank: 0
     }));
   }
-  
+
+  // 已配置嵌入模型，使用 BM25+语义 RRF 融合
   const [bm25Results, semanticResults] = await Promise.all([
     Promise.resolve(miniSearchRetrieve(query, results)),
     semanticRetrieve(query, results)
   ]);
-  
+
   const fusedResults = rrfFusion(bm25Results, semanticResults);
-  
+
   return fusedResults.slice(0, TOP_K);
 }

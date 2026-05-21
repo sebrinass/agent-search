@@ -15,7 +15,12 @@ export function logMessage(server: Server | null, level: LoggingLevel, message: 
     : { message };
 
   if (!server) {
-    console.log(`[${level.toUpperCase()}] ${message}`, data !== undefined ? data : '');
+    // CLI 模式：只输出 warning 和 error（除非开启 verbose）
+    if (level === 'warning' || level === 'error') {
+      console.error(`[${level.toUpperCase()}] ${message}`);
+    } else if (currentLogLevel === 'debug') {
+      console.error(`[${level.toUpperCase()}] ${message}`);
+    }
     return;
   }
 

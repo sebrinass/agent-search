@@ -14,11 +14,6 @@ import { ResearchServer, SearchInput, SEARCH_TOOL } from "./research.js";
 import { createConfigResource, createHelpResource } from "./resources.js";
 import { FETCH_TIMEOUT_MS } from "./config.js";
 
-export interface ToolHandlerDeps {
-  server: Server;
-  researchServer: ResearchServer;
-}
-
 /**
  * 向 MCP Server 注册所有请求处理器（工具列表、工具调用、日志级别、资源列表、资源读取）。
  * 集中管理，避免在 mcp-main.ts / http-server.ts 中重复定义。
@@ -148,7 +143,7 @@ export async function handleSearchTool(
     time_range: typedArgs.time_range as string | undefined,
     lang: typedArgs.lang as string | undefined,
     safeSearch: typedArgs.safeSearch as number | undefined,
-    mode: typedArgs.mode as 'fast' | 'embedding' | undefined,
+    category: typedArgs.category as string | undefined,
   };
 
   const result = await researchServer.processSearch(searchInput);
