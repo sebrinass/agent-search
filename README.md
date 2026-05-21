@@ -138,23 +138,26 @@ agent-search
 ### search — 网络搜索
 
 ```bash
-# 基本搜索
-SEARXNG_URL=http://localhost:8080 agent-search search -q "RAG 技术"
+# 基本搜索（配好 .env 后直接使用）
+agent-search search -q "RAG 技术"
 
-# 多关键词并发搜索
-SEARXNG_URL=http://localhost:8080 agent-search search -q "RAG" "向量数据库" "Embedding"
+# 多关键词并发搜索（推荐）
+agent-search search -q "RAG" "向量数据库" "Embedding"
 
 # 限制域名和时间范围
-SEARXNG_URL=http://localhost:8080 agent-search search -q "React 19" --site github.com --time-range month
+agent-search search -q "React 19" --site github.com --time-range month
 
-# 指定语言和安全搜索
-SEARXNG_URL=http://localhost:8080 agent-search search -q "TypeScript" --lang en --safe-search 1
+# 指定分类和语言
+agent-search search -q "TypeScript" --category it --lang en
 
 # JSON 格式输出
-SEARXNG_URL=http://localhost:8080 agent-search search -q "RAG 技术" --json
+agent-search search -q "RAG 技术" --json
 
 # 详细输出
-SEARXNG_URL=http://localhost:8080 agent-search -v search -q "RAG 技术"
+agent-search -v search -q "RAG 技术"
+
+# 未配置 .env 时，也可通过环境变量指定
+SEARXNG_URL=http://localhost:8080 agent-search search -q "RAG 技术"
 ```
 
 **选项：**
