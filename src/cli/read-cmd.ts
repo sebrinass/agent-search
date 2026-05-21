@@ -58,5 +58,7 @@ export function registerReadCommand(program: Command) {
         console.error("读取失败:", error instanceof Error ? error.message : String(error));
         process.exit(1);
       }
+
+      process.exit(0);
     });
 }

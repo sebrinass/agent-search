@@ -59,8 +59,11 @@ export function registerSearchCommand(program: Command) {
               }
               for (const r of kr.results) {
                 console.log(`   ${r.title}`);
-                console.log(`   ${r.url}`);
-                console.log(`   ${r.description}`);
+                console.log(`   ${r.link}`);
+                console.log(`   ${r.snippet}`);
+                if (r.publishedDate) {
+                  console.log(`   📅 ${r.publishedDate}`);
+                }
                 console.log();
               }
             }
@@ -72,5 +75,7 @@ export function registerSearchCommand(program: Command) {
       } catch {
         console.log(result.content[0].text);
       }
+
+      process.exit(0);
     });
 }

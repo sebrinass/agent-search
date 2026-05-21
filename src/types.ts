@@ -12,6 +12,7 @@ export interface SearXNGWeb {
     content: string;
     url: string;
     score: number;
+    publishedDate?: string;
   }>;
 }
 

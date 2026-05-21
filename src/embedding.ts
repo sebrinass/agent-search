@@ -32,6 +32,7 @@ export interface SearchResult {
   content: string;
   url: string;
   score: number;
+  publishedDate?: string;
 }
 
 export interface ScoredResult extends SearchResult {

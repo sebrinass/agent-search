@@ -172,5 +172,6 @@ export async function fetchSinglePage(
     content: result.content || "",
     url: result.url || "",
     score: result.score || 0,
+    publishedDate: result.publishedDate || undefined,
   }));
 }

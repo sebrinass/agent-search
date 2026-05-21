@@ -43,8 +43,9 @@ export interface SearchInput {
  */
 export interface SearchResultItem {
   title: string;
-  url: string;
-  description: string;
+  link: string;
+  snippet: string;
+  publishedDate?: string;
 }
 
 /**
@@ -159,10 +160,11 @@ export class ResearchServer {
         if (!isLinkDuplicate(result.url)) {
           dedupedResults.push({
             title: result.title,
-            url: result.url,
-            description: result.content.length > MAX_DESCRIPTION_LENGTH 
+            link: result.url,
+            snippet: result.content.length > MAX_DESCRIPTION_LENGTH 
               ? result.content.substring(0, MAX_DESCRIPTION_LENGTH) + '...' 
               : result.content,
+            publishedDate: result.publishedDate,
           });
           newUrls.push(result.url);
         }
