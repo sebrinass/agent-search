@@ -88,6 +88,13 @@ export function createURLFormatError(url: string): MCPSearXNGError {
   return new MCPSearXNGError(`🔧 URL Format Error: Invalid URL "${url}"`);
 }
 
+export function createURLSecurityPolicyError(url: string): MCPSearXNGError {
+  return new MCPSearXNGError(
+    `🔒 Security Error: URL "${url}" targets a private/loopback/link-local address and was blocked by the security policy. ` +
+    `To allow private URLs in trusted local development, set MCP_HTTP_ALLOW_PRIVATE_URLS=true.`
+  );
+}
+
 export function createContentError(message: string, url: string): MCPSearXNGError {
   return new MCPSearXNGError(`📄 Content Error: ${message} (${url})`);
 }

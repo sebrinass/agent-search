@@ -4,7 +4,13 @@ import { createProxyAgent } from "./proxy.js";
 import { logMessage } from "./logging.js";
 import { urlContentCache, linkDedupPool } from "./cache.js";
 import {
+  assertUrlAllowed,
+  isUrlSecurityPolicyDnsError,
+  createUrlSecurityPolicyDnsError,
+} from "./url-security.js";
+import {
   createURLFormatError,
+  createURLSecurityPolicyError,
   createNetworkError,
   createServerError,
   createContentError,
@@ -17,6 +23,12 @@ import {
   ENABLE_JS_RENDER,
   ENABLE_READABILITY
 } from "./config.js";
+
+// ============ 安全限制常量 ============
+// URL 读取最大内容长度（默认 5MB），可通过 URL_READ_MAX_CONTENT_LENGTH_BYTES 环境变量覆盖
+export const DEFAULT_MAX_CONTENT_LENGTH_BYTES = 5 * 1024 * 1024;
+// HEAD 预检请求超时上限（3秒），避免 HEAD 卡死
+const HEAD_TIMEOUT_CAP_MS = 3000;
 
 // ============ curl-cffi 懒加载 ============
 let curlCffiModule: typeof import('curl-cffi') | null = null;
@@ -108,7 +120,131 @@ function installHappyDomErrorHandler() {
   });
 }
 
-// ============ 分页辅助函数 ============
+// ============ 5MB 内容上限相关辅助函数 ============
+type BoundedBodyReadResult =
+  | { exceeded: false; text: string; bytesRead: number }
+  | { exceeded: true; bytesRead: number };
+
+/**
+ * 读取环境变量 URL_READ_MAX_CONTENT_LENGTH_BYTES，超过 0 的整数即生效。
+ * 默认 5MB。非法值会记录 warning 并使用默认。
+ */
+function getMaxContentLengthBytes(server: Server | null): number {
+  const rawValue = process.env.URL_READ_MAX_CONTENT_LENGTH_BYTES;
+  if (rawValue === undefined || rawValue.trim() === "") {
+    return DEFAULT_MAX_CONTENT_LENGTH_BYTES;
+  }
+
+  const parsed = parseInt(rawValue, 10);
+  if (Number.isNaN(parsed) || parsed <= 0) {
+    logMessage(
+      server,
+      "warning",
+      `Ignoring invalid URL_READ_MAX_CONTENT_LENGTH_BYTES="${rawValue}". Expected a positive integer; using default ${DEFAULT_MAX_CONTENT_LENGTH_BYTES}.`,
+    );
+    return DEFAULT_MAX_CONTENT_LENGTH_BYTES;
+  }
+
+  return parsed;
+}
+
+function createContentTooLargeMessage(contentLength: number, maxBytes: number): string {
+  const sizeMB = (contentLength / (1024 * 1024)).toFixed(1);
+  const limitMB = (maxBytes / (1024 * 1024)).toFixed(1);
+  return (
+    `Content too large: server reports ${sizeMB} MB (limit: ${limitMB} MB). ` +
+    `Try using readHeadings or section to fetch only the relevant parts.`
+  );
+}
+
+/**
+ * 用流式读取器逐块读取 response body，超出 maxBytes 立即取消。
+ * 这样可防止 chunked 编码或缺失 Content-Length 时把整个 body 读进内存（DoS 防护）。
+ */
+async function readResponseBodyWithLimit(response: Response, maxBytes: number): Promise<BoundedBodyReadResult> {
+  if (response.body === null) {
+    return { exceeded: false, text: "", bytesRead: 0 };
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytesRead = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      if (!value) {
+        continue;
+      }
+
+      bytesRead += value.byteLength;
+      if (bytesRead > maxBytes) {
+        await reader.cancel();
+        return { exceeded: true, bytesRead };
+      }
+
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const totalLength = chunks.reduce((sum, c) => sum + c.byteLength, 0);
+  const bodyBytes = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bodyBytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  return { exceeded: false, text: new TextDecoder("utf-8").decode(bodyBytes), bytesRead };
+}
+
+/**
+ * HEAD 预检：先发一次 HEAD 请求获取 Content-Length，超出限制就提前返回错误。
+ * HEAD 失败（如某些服务器不允许）不视为错误，继续走 GET。
+ */
+async function checkContentLength(
+  server: Server | null,
+  url: string,
+  timeoutMs: number,
+  requestOptions: RequestInit
+): Promise<number | null> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), Math.min(timeoutMs, HEAD_TIMEOUT_CAP_MS));
+
+  try {
+    const headOptions: RequestInit = {
+      ...requestOptions,
+      method: "HEAD",
+      signal: controller.signal,
+      redirect: "manual",
+    };
+
+    const response = await fetch(url, headOptions);
+    const contentLength = response.headers.get("content-length");
+    if (!contentLength) {
+      return null;
+    }
+
+    const parsed = parseInt(contentLength, 10);
+    return Number.isNaN(parsed) || parsed < 0 ? null : parsed;
+  } catch (error: any) {
+    if (isUrlSecurityPolicyDnsError(error)) {
+      throw createURLSecurityPolicyError(url);
+    }
+
+    logMessage(server, "warning", `HEAD check failed (proceeding with GET): ${error.message}`);
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+// ============ 字符分页 / 章节提取辅助函数 ============
 function applyCharacterPagination(content: string, startChar: number = 0, maxLength?: number): string {
   if (startChar >= content.length) {
     return "";
@@ -353,6 +489,44 @@ async function fetchHtmlContent(
   url: string,
   timeoutMs: number
 ): Promise<FetchResult> {
+  const maxContentLengthBytes = getMaxContentLengthBytes(server);
+
+  // 准备基础请求选项（curl-cffi 和原生 fetch 共用）
+  const baseHeaders: Record<string, string> = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+  };
+
+  // HEAD 预检：检查 Content-Length 是否超过上限
+  // 注意：HEAD 失败不视为错误（部分服务器不允许 HEAD），继续走 GET
+  try {
+    const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy;
+    const headRequestOptions: RequestInit = { headers: baseHeaders };
+    if (proxyUrl) {
+      // HEAD 也走代理，保证一致性
+      try {
+        const proxyAgent = createProxyAgent(url);
+        if (proxyAgent) {
+          (headRequestOptions as any).dispatcher = proxyAgent;
+        }
+      } catch {
+        // 代理配置错误不影响 HEAD
+      }
+    }
+    const contentLength = await checkContentLength(server, url, timeoutMs, headRequestOptions);
+    if (contentLength !== null && contentLength > maxContentLengthBytes) {
+      throw new Error(createContentTooLargeMessage(contentLength, maxContentLengthBytes));
+    }
+  } catch (error: any) {
+    // 抛出的可能是"内容过大"的友好消息，也可能是 SSRF 错误
+    if (error.message && error.message.startsWith("Content too large:")) {
+      throw error;
+    }
+    if (error.name === 'MCPSearXNGError') {
+      throw error;
+    }
+    // 其他 HEAD 错误已在 checkContentLength 内记录 warning，继续走 GET
+  }
+
   // 尝试使用 curl-cffi
   const curlCffi = await getCurlCffi();
 
@@ -388,10 +562,25 @@ async function fetchHtmlContent(
         throw createServerError(response.status, '', responseBody, context);
       }
 
+      // curl-cffi 二次检查 Content-Length（HEAD 被跳过或漏报的情况）
+      const contentLengthHeader = (response.headers as any)?.['content-length'];
+      if (contentLengthHeader) {
+        const reportedLength = parseInt(String(contentLengthHeader), 10);
+        if (!Number.isNaN(reportedLength) && reportedLength > maxContentLengthBytes) {
+          throw new Error(createContentTooLargeMessage(reportedLength, maxContentLengthBytes));
+        }
+      }
+
       const htmlContent = response.text;
 
       if (!htmlContent || htmlContent.trim().length === 0) {
         throw createContentError("Website returned empty content.", url);
+      }
+
+      // 二次检查：实际 body 字节数（防止 chunked 编码或 Content-Length 缺失/伪造）
+      const actualBytes = Buffer.byteLength(htmlContent, 'utf8');
+      if (actualBytes > maxContentLengthBytes) {
+        throw new Error(createContentTooLargeMessage(actualBytes, maxContentLengthBytes));
       }
 
       return {
@@ -399,6 +588,12 @@ async function fetchHtmlContent(
         source: 'fetch'
       };
     } catch (error: any) {
+      if (error.message && error.message.startsWith("Content too large:")) {
+        throw error;
+      }
+      if (error.name === 'MCPSearXNGError') {
+        throw error;
+      }
       // curl-cffi 失败，降级到原生 fetch
       logMessage(server, 'warning', `curl-cffi failed for: ${url} - ${error.message}, falling back to native fetch`);
     }
@@ -412,9 +607,7 @@ async function fetchHtmlContent(
     // Prepare request options with proxy support
     const requestOptions: RequestInit = {
       signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      }
+      headers: baseHeaders
     };
 
     // Add proxy dispatcher if proxy is configured
@@ -427,6 +620,9 @@ async function fetchHtmlContent(
     try {
       response = await fetch(url, requestOptions);
     } catch (error: any) {
+      if (isUrlSecurityPolicyDnsError(error)) {
+        throw createURLSecurityPolicyError(url);
+      }
       const context: ErrorContext = {
         url,
         proxyAgent: !!proxyAgent,
@@ -438,7 +634,10 @@ async function fetchHtmlContent(
     if (!response.ok) {
       let responseBody: string;
       try {
-        responseBody = await response.text();
+        const bodyRead = await readResponseBodyWithLimit(response, maxContentLengthBytes);
+        responseBody = bodyRead.exceeded
+          ? createContentTooLargeMessage(bodyRead.bytesRead, maxContentLengthBytes)
+          : bodyRead.text;
       } catch {
         responseBody = '[Could not read response body]';
       }
@@ -447,11 +646,18 @@ async function fetchHtmlContent(
       throw createServerError(response.status, response.statusText, responseBody, context);
     }
 
-    // Retrieve HTML content
+    // Retrieve HTML content (with bounded stream to prevent OOM)
     let htmlContent: string;
     try {
-      htmlContent = await response.text();
+      const bodyRead = await readResponseBodyWithLimit(response, maxContentLengthBytes);
+      if (bodyRead.exceeded) {
+        throw new Error(createContentTooLargeMessage(bodyRead.bytesRead, maxContentLengthBytes));
+      }
+      htmlContent = bodyRead.text;
     } catch (error: any) {
+      if (error.message && error.message.startsWith("Content too large:")) {
+        throw error;
+      }
       throw createContentError(
         `Failed to read website content: ${error.message || 'Unknown error reading content'}`,
         url
@@ -499,6 +705,10 @@ async function fetchSingleUrl(
     logMessage(server, "error", `Invalid URL format: ${url}`);
     throw createURLFormatError(url);
   }
+
+  // SSRF 防护：拒绝内网/loopback/link-local 地址
+  // 可通过 MCP_HTTP_ALLOW_PRIVATE_URLS=true 临时放行（仅限本地开发）
+  assertUrlAllowed(parsedUrl);
 
   // 添加到去重池
   linkDedupPool.add(url);
