@@ -1,0 +1,115 @@
+name: Build & Publish agent-search
+
+# 手动触发为主：稳定版本不频繁发布，需要时手动跑
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '镜像版本号（留空则自动读取 package.json 中的版本）'
+        required: false
+        default: ''
+      tag_latest:
+        description: '同时打上 latest 标签'
+        type: boolean
+        default: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: sebrinass/agent-search
+
+jobs:
+  build:
+    name: Build & Push to GHCR
+    runs-on: ubuntu-latest
+    # 只构建当前仓库主人推送的；PR 不会推镜像
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 确定要打的版本号：优先用手动输入，否则从 package.json 读
+      - name: Resolve version
+        id: version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+            echo "::notice::使用手动指定的版本: $VERSION"
+          else
+            VERSION=$(node -p "require('./package.json').version")
+            echo "::notice::从 package.json 读取版本: $VERSION"
+          fi
+          # 去掉可能的 'v' 前缀（用户可能输入 v0.2.1）
+          VERSION="${VERSION#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "📦 最终构建版本: $VERSION"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 提取 tag 和 label
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=latest,enable=${{ inputs.tag_latest }}
+          labels: |
+            org.opencontainers.image.title=agent-search
+            org.opencontainers.image.description=为 Agent 提供高效的本地联网搜索能力，支持并发检索 + Embedding 重排序
+            org.opencontainers.image.source=https://github.com/${{ env.IMAGE_NAME }}
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          # 只构建 x86_64（Unraid / 主流 Linux 服务器 / 桌面）
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # 用 GitHub 自带缓存加速后续构建
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # 供应链安全
+          provenance: true
+
+      - name: Build summary
+        if: success()
+        run: |
+          {
+            echo "## 🐳 镜像构建完成"
+            echo ""
+            echo "**镜像仓库**: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}\`"
+            echo ""
+            echo "**版本**: \`${{ steps.version.outputs.version }}\`"
+            echo ""
+            echo "**Tags**:"
+            echo "${{ steps.meta.outputs.tags }}" | tr ' ' '\n' | sed 's/^/- `/' | sed 's/$/`/'
+            echo ""
+            echo "### 📋 Unraid 安装命令"
+            echo '```'
+            echo "docker run -d --name agent-search \\"
+            echo "  -p 3000:3000 \\"
+            echo "  -e SEARXNG_URL=http://192.168.1.243:8080 \\"
+            echo "  -e MCP_HTTP_PORT=3000 \\"
+            echo "  --restart unless-stopped \\"
+            echo "  ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}"
+            echo '```'
+            echo ""
+            echo "### 🔗 查看镜像"
+            echo "https://github.com/${{ env.IMAGE_NAME }}/pkgs/container/agent-search"
+          } >> "$GITHUB_STEP_SUMMARY"
