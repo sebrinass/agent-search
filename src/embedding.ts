@@ -242,6 +242,139 @@ export async function getEmbedding(text: string, type: 'query' | 'document' = 'q
   return getOpenAIEmbedding(text, type);
 }
 
+// ============ 批量嵌入 ============
+/**
+ * 批量调用嵌入 API - 一次 HTTP 请求处理多条文本
+ * 性能优化：减少 HTTP 请求次数，让 Ollama 内部做 GPU batch forward
+ * 关键优势：30 条文档从 30 次请求 → 1 次请求
+ */
+async function getOpenAIEmbeddings(
+  texts: string[],
+  type: 'query' | 'document' = 'document'
+): Promise<number[][]> {
+  if (texts.length === 0) {
+    return [];
+  }
+
+  // 文本截断 + Jina v5 Task LoRA 前缀
+  const prepared = texts.map(t => {
+    let txt = t || '';
+    if (txt.length > EMBEDDING_MAX_TEXT_LENGTH) {
+      txt = txt.slice(0, EMBEDDING_MAX_TEXT_LENGTH);
+    }
+    return applyTaskLoRAPrefix(txt, type);
+  });
+
+  // 缓存检查：分离已缓存和未缓存的
+  const cacheKeys = texts; // 缓存 key 用原始文本（不含前缀，避免前缀变化导致缓存失效）
+  const results: (number[] | null)[] = new Array(texts.length).fill(null);
+  const uncachedIndices: number[] = [];
+  const uncachedInputs: string[] = [];
+
+  for (let i = 0; i < texts.length; i++) {
+    const cached = embeddingCache.get(cacheKeys[i]);
+    if (cached) {
+      results[i] = Array.from(cached);
+    } else {
+      uncachedIndices.push(i);
+      uncachedInputs.push(prepared[i]);
+    }
+  }
+
+  if (uncachedInputs.length === 0) {
+    return results as number[][];
+  }
+
+  let baseUrl = EMBEDDING_BASE_URL;
+  if (baseUrl && !baseUrl.includes('/v1')) {
+    baseUrl = baseUrl.replace(/\/$/, '') + '/v1';
+  }
+
+  const endpoint = baseUrl
+    ? `${baseUrl}/embeddings`
+    : 'https://api.openai.com/v1/embeddings';
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  if (EMBEDDING_API_KEY) {
+    headers['Authorization'] = `Bearer ${EMBEDDING_API_KEY}`;
+  }
+
+  const MAX_429_RETRIES = 3;
+
+  try {
+    let response!: Response;
+
+    for (let attempt = 0; attempt <= MAX_429_RETRIES; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), EMBEDDING_TIMEOUT_MS);
+
+      response = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: EMBEDDING_MODEL,
+          input: uncachedInputs, // 一次发送多条
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (response.status === 429 && attempt < MAX_429_RETRIES) {
+        const waitMs = 1000 * Math.pow(2, attempt);
+        logMessage(null, 'info', `嵌入 API 限流(429)，批量请求第${attempt + 1}次重试，等待${waitMs}ms...`);
+        await new Promise(resolve => setTimeout(resolve, waitMs));
+        continue;
+      }
+
+      break;
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logMessage(null, 'error', `Embedding API batch error: ${response.status} ${response.statusText} - ${errorText}`);
+      return results.map(r => r || []);
+    }
+
+    const data = await response.json() as {
+      data?: Array<{ embedding?: number[] }>
+    };
+
+    if (!data.data || data.data.length !== uncachedInputs.length) {
+      logMessage(null, 'error', `Embedding API batch: 期望 ${uncachedInputs.length} 个向量，实际返回 ${data.data?.length || 0}`);
+      return results.map(r => r || []);
+    }
+
+    // 填回结果 + 写缓存
+    for (let i = 0; i < uncachedIndices.length; i++) {
+      const vec = data.data[i].embedding;
+      if (vec && vec.length > 0) {
+        results[uncachedIndices[i]] = vec;
+        embeddingCache.set(cacheKeys[uncachedIndices[i]], vec);
+      }
+    }
+
+    return results as number[][];
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      logMessage(null, 'warning', `⚠️ 批量嵌入超时(${EMBEDDING_TIMEOUT_MS}ms)，已降级为纯文本检索`);
+      return results.map(r => r || []);
+    }
+    logMessage(null, 'error', `Error batch getting embeddings: ${error instanceof Error ? error.message : String(error)}`);
+    return results.map(r => r || []);
+  }
+}
+
+export async function getEmbeddings(
+  texts: string[],
+  type: 'query' | 'document' = 'document'
+): Promise<number[][]> {
+  return getOpenAIEmbeddings(texts, type);
+}
+
 // ============ 余弦相似度 ============
 export function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length === 0 || b.length === 0 || a.length !== b.length) {
@@ -299,7 +432,7 @@ async function semanticRetrieve(
   results: SearchResult[]
 ): Promise<{ result: SearchResult; score: number; rank: number }[]> {
   const queryEmbedding = await getEmbedding(query, 'query');
-  
+
   if (queryEmbedding.length === 0) {
     return results.map((result, rank) => ({
       result,
@@ -307,20 +440,23 @@ async function semanticRetrieve(
       rank: rank + 1
     }));
   }
-  
-  // 并发控制：最多同时10个嵌入请求，避免触发 API 限流
-  const scored = await limitConcurrency(
-    results.map((result) => async () => {
-      const docText = `${result.title} ${result.content}`;
-      const docEmbedding = await getEmbedding(docText, 'document');
-      const score = cosineSimilarity(queryEmbedding, docEmbedding);
-      return { result, score };
-    }),
-    5
-  );
+
+  // 批量嵌入：一次 HTTP 请求发送所有文档，让 Ollama 内部做 GPU batch forward
+  // 性能优化：30 条文档从 30 次请求 → 1 次请求
+  const docTexts = results.map(result => `${result.title} ${result.content}`);
+  const docEmbeddings = await getEmbeddings(docTexts, 'document');
+
+  const scored: { result: SearchResult; score: number }[] = results.map((result, i) => {
+    const docEmbedding = docEmbeddings[i];
+    if (!docEmbedding || docEmbedding.length === 0) {
+      return { result, score: 0 };
+    }
+    const score = cosineSimilarity(queryEmbedding, docEmbedding);
+    return { result, score };
+  });
 
   scored.sort((a, b) => b.score - a.score);
-  
+
   return scored.map((item, rank) => ({
     result: item.result,
     score: item.score,

@@ -23,7 +23,7 @@ export const isEmbeddingEnabled = !!(EMBEDDING_API_KEY || EMBEDDING_BASE_URL);
 export const EMBEDDING_TIMEOUT_MS = parseInt(process.env.EMBEDDING_TIMEOUT_MS || '90000', 10);
 
 // ============ 搜索相关配置 ============
-export const DEFAULT_SEARCH_PAGES = 1;
+export const DEFAULT_SEARCH_PAGES = 2;
 export const SEARCH_PAGES = parseInt(process.env.SEARCH_PAGES || String(DEFAULT_SEARCH_PAGES), 10);
 export const SEARCH_ENGINES = process.env.SEARCH_ENGINES || '';
 export const SEARCH_TIMEOUT_MS = parseInt(process.env.SEARCH_TIMEOUT_MS || String(EMBEDDING_TIMEOUT_MS + 10000), 10);
