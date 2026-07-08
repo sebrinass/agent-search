@@ -22,7 +22,8 @@ import {
   TOP_K,
   RRF_K,
   isEmbeddingEnabled,
-  EMBEDDING_TIMEOUT_MS
+  EMBEDDING_TIMEOUT_MS,
+  MAX_DESCRIPTION_LENGTH
 } from './config.js';
 import { logMessage } from './logging.js';
 
@@ -135,8 +136,8 @@ function applyTaskLoRAPrefix(text: string, type: 'query' | 'document'): string {
 }
 
 // ============ 嵌入文本最大长度 ============
-/** 发送给嵌入 API 的文本最大字符数，超出部分截断 */
-const EMBEDDING_MAX_TEXT_LENGTH = 800;
+/** 发送给嵌入 API 的文本最大字符数，与输出摘要长度保持一致，避免计算浪费 */
+const EMBEDDING_MAX_TEXT_LENGTH = MAX_DESCRIPTION_LENGTH;
 
 // ============ OpenAI 兼容 API 嵌入 ============
 async function getOpenAIEmbedding(text: string, type: 'query' | 'document' = 'query'): Promise<number[]> {
