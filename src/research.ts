@@ -20,8 +20,7 @@ import {
   MAX_DESCRIPTION_LENGTH,
   SEARCH_PAGES,
   SEARCH_LANGUAGE,
-  SAFE_SEARCH,
-  isEmbeddingEnabled
+  SAFE_SEARCH
 } from "./config.js";
 
 // ============ 类型定义 ============
@@ -106,8 +105,9 @@ export class ResearchServer {
       const effectiveLang = lang || SEARCH_LANGUAGE;
       const effectiveSafeSearch = safeSearch !== undefined ? safeSearch : SAFE_SEARCH;
 
-      // 自动判断：配置了嵌入模型则搜多页，否则只搜1页
-      const pagesToFetch = isEmbeddingEnabled ? SEARCH_PAGES : 1;
+      // 统一每词抓取页数（默认 1 页）：由 SEARCH_PAGES 单一开关控制，
+      // 开/不开 embedding 都用同一值，行为可预测；需要更大候选池时调大 SEARCH_PAGES 即可。
+      const pagesToFetch = SEARCH_PAGES;
 
       const pagePromises: Promise<Array<{ title: string; content: string; url: string; score: number }>>[] = [];
       for (let page = 1; page <= pagesToFetch; page++) {

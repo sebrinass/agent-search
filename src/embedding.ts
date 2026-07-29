@@ -135,8 +135,8 @@ function applyTaskLoRAPrefix(text: string, type: 'query' | 'document'): string {
 }
 
 // ============ 嵌入文本最大长度 ============
-/** 发送给嵌入 API 的文本最大字符数，超出部分截断 */
-const EMBEDDING_MAX_TEXT_LENGTH = 800;
+/** 发送给嵌入 API 的文本最大字符数，超出部分截断（截短可降低每条的计算量，iGPU 上提速明显） */
+const EMBEDDING_MAX_TEXT_LENGTH = 300;
 
 // ============ OpenAI 兼容 API 嵌入 ============
 async function getOpenAIEmbedding(text: string, type: 'query' | 'document' = 'query'): Promise<number[]> {
@@ -532,13 +532,14 @@ export async function rerankWithHybridSearch(
     }));
   }
 
-  // 未配置嵌入模型，仅使用 BM25 检索
+  // 未配置嵌入模型：信任 SearXNG 自身的相关性排序，直接取前 TOP_K。
+  // （不再用 BM25 重排：BM25 只看标题+短摘要，信号弱，且会丢弃未字面匹配的结果，
+  //   单独使用反而比 SearXNG 原始排序更差。BM25 仅在开启嵌入时作为 RRF 的一票保留。）
   if (!isEmbeddingEnabled) {
-    const bm25Results = miniSearchRetrieve(query, results);
-    return bm25Results.slice(0, TOP_K).map(item => ({
-      ...item.result,
-      rrfScore: 1 / (RRF_K + item.rank),
-      bm25Rank: item.rank,
+    return results.slice(0, TOP_K).map((result, index) => ({
+      ...result,
+      rrfScore: results.length - index,
+      bm25Rank: index + 1,
       semanticRank: 0
     }));
   }

@@ -106,7 +106,7 @@ EMBEDDING_TIMEOUT_MS=90000
 
 搜索模式根据 `EMBEDDING_BASE_URL` 配置自动判断，无需手动指定：
 
-- **未配置 `EMBEDDING_BASE_URL`** — 快速搜索，纯文本检索（BM25），响应速度快
+- **未配置 `EMBEDDING_BASE_URL`** — 快速搜索，直接信任 SearXNG 原始排序，响应速度快
 - **配置了 `EMBEDDING_BASE_URL`** — 精准搜索，使用 Embedding 重排序提升相关性
 
 **说明：** 搜索模式由系统根据嵌入模型配置自动切换，无需在调用参数中指定 mode。
@@ -193,7 +193,9 @@ MAX_DESCRIPTION_LENGTH=200
 
 ### ENABLE_JS_RENDER
 
-启用 JS 渲染降级。当普通请求失败时，尝试用无头浏览器渲染。
+启用 JS 渲染降级。当普通请求（curl-cffi / fetch）拿到的是需要 JS 渲染的空壳页面（SPA）时，
+第 2 层用 Lightpanda 轻量无头浏览器执行 JS 拿到渲染后的内容。需同时配置 `LIGHTPANDA_EXECUTABLE_PATH`
+且二进制存在才生效；未配置则自动跳过该层（不影响普通抓取）。
 
 ```bash
 ENABLE_JS_RENDER=true
@@ -220,6 +222,30 @@ FETCH_TIMEOUT_MS=30000
 ```
 
 **默认值：** `30000`（30 秒）
+
+### LIGHTPANDA_EXECUTABLE_PATH
+
+Lightpanda 无头浏览器可执行文件路径，用于 Read 工具第 2 层渲染动态页面（SPA）。
+采用一次性启动模式（读完即退，闲时零内存）。未设置或文件不存在则自动跳过第 2 层。
+
+```bash
+LIGHTPANDA_EXECUTABLE_PATH=/usr/local/bin/lightpanda
+```
+
+**默认值：** 空（不启用）。Docker 镜像内默认置于 `/usr/local/bin/lightpanda`。
+
+> Lightpanda 只负责“读取渲染后的内容”，不支持截图、复杂交互与反爬；这类需求请交由完整浏览器 MCP 处理。
+
+### LIGHTPANDA_MIN_CONTENT_LENGTH
+
+Lightpanda 渲染后正文的最小字符数。低于此值视为“空壳”（渲染不全或被反爬拦截），
+降级返回提示交由上层 agent 处理，且不缓存。
+
+```bash
+LIGHTPANDA_MIN_CONTENT_LENGTH=200
+```
+
+**默认值：** `200`
 
 ### USER_AGENT
 
@@ -386,7 +412,7 @@ services:
 | 模式 | SEARCH_PAGES | EMBEDDING_TIMEOUT_MS | 相关性 |
 |------|--------------|---------------------|--------|
 | 纯文本 | 1 | - | ~50% |
-| 混合检索 | 3 | 90000 | ~80% |
+| 混合检索 | 1 | 90000 | ~80% |
 
 **优化建议：**
 - 搜索关键词并发不超过 3 个

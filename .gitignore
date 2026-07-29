@@ -33,6 +33,7 @@ logs
 *.sln
 *.sw?
 .roo
+.qoder
 
 # OS files
 .DS_Store

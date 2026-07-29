@@ -107,12 +107,14 @@ async function runTests() {
     assert.equal(scored[2].rrfScore, 1);
   }, results);
 
-  await testFunction('rerankWithHybridSearch uses BM25 for large input without embedding', async () => {
+  await testFunction('rerankWithHybridSearch trusts SearXNG order for large input without embedding', async () => {
     // Ensure embedding is disabled (no EMBEDDING_API_KEY or EMBEDDING_BASE_URL)
     envManager.delete('EMBEDDING_API_KEY');
     envManager.delete('EMBEDDING_BASE_URL');
 
-    // Create more than TOP_K (5) results to trigger BM25
+    // Create more than TOP_K (5) results to trigger the rerank branch.
+    // Without embedding we now trust SearXNG's native order (no BM25 rerank),
+    // taking the first TOP_K results as-is.
     const input: SearchResult[] = [];
     for (let i = 0; i < 8; i++) {
       input.push({
@@ -127,7 +129,10 @@ async function runTests() {
     assert.ok(scored.length <= 5, `Should return at most TOP_K results, got ${scored.length}`);
     assert.ok(scored.length > 0, 'Should return some results');
 
-    // All results should have rrfScore
+    // Native order preserved: first result stays first
+    assert.equal(scored[0].url, 'https://example.com/0', 'Should preserve SearXNG native order');
+
+    // All results should have positive rrfScore
     for (const result of scored) {
       assert.ok(typeof result.rrfScore === 'number', 'Should have numeric rrfScore');
       assert.ok(result.rrfScore > 0, 'rrfScore should be positive');

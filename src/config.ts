@@ -23,7 +23,10 @@ export const isEmbeddingEnabled = !!(EMBEDDING_API_KEY || EMBEDDING_BASE_URL);
 export const EMBEDDING_TIMEOUT_MS = parseInt(process.env.EMBEDDING_TIMEOUT_MS || '90000', 10);
 
 // ============ 搜索相关配置 ============
-export const DEFAULT_SEARCH_PAGES = 2;
+// 默认每个关键词只抓 1 页：SearXNG 首页即为其认定最相关的约 10 条，
+// 抓更多页多为长尾、还会成倍增加本地 embedding 的计算量（iGPU 低功耗环境敏感）。
+// 需要更大候选池时可用环境变量 SEARCH_PAGES 覆盖。
+export const DEFAULT_SEARCH_PAGES = 1;
 export const SEARCH_PAGES = parseInt(process.env.SEARCH_PAGES || String(DEFAULT_SEARCH_PAGES), 10);
 export const SEARCH_ENGINES = process.env.SEARCH_ENGINES || '';
 export const SEARCH_TIMEOUT_MS = parseInt(process.env.SEARCH_TIMEOUT_MS || String(EMBEDDING_TIMEOUT_MS + 10000), 10);
@@ -42,6 +45,15 @@ export const MAX_DESCRIPTION_LENGTH = parseInt(process.env.MAX_DESCRIPTION_LENGT
 export const FETCH_TIMEOUT_MS = parseInt(process.env.FETCH_TIMEOUT_MS || '30000', 10);
 export const ENABLE_JS_RENDER = process.env.ENABLE_JS_RENDER !== 'false';
 export const ENABLE_READABILITY = process.env.ENABLE_READABILITY !== 'false';
+
+// ============ Lightpanda 动态渲染配置 ============
+// Lightpanda 是轻量无头浏览器，作为 Read 第 2 层兜底渲染动态页面（SPA）。
+// 采用一次性 spawn 模式（读完即退，闲时零内存），仅在需要时启动。
+// 可执行文件路径：未设置或文件不存在则自动跳过第 2 层（与 curl-cffi 装不上就降级同风格）。
+// Docker 镜像内默认置于 /usr/local/bin/lightpanda（由 Dockerfile 设置该环境变量）。
+export const LIGHTPANDA_EXECUTABLE_PATH = process.env.LIGHTPANDA_EXECUTABLE_PATH || '';
+// 渲染后正文的最小字符数：低于此值视为"空壳"（渲染失败/被反爬拦截），降级交给上层 agent。
+export const LIGHTPANDA_MIN_CONTENT_LENGTH = parseInt(process.env.LIGHTPANDA_MIN_CONTENT_LENGTH || '200', 10);
 
 // ============ 缓存相关配置 ============
 export const LINK_DEDUP_TTL = parseInt(process.env.LINK_DEDUP_TTL || '86400', 10);

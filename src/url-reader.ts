@@ -20,9 +20,10 @@ import {
 } from "./error-handler.js";
 import {
   FETCH_TIMEOUT_MS,
-  ENABLE_JS_RENDER,
-  ENABLE_READABILITY
+  ENABLE_READABILITY,
+  LIGHTPANDA_MIN_CONTENT_LENGTH
 } from "./config.js";
+import { fetchWithLightpanda } from "./lightpanda.js";
 
 // ============ 安全限制常量 ============
 // URL 读取最大内容长度（默认 5MB），可通过 URL_READ_MAX_CONTENT_LENGTH_BYTES 环境变量覆盖
@@ -64,8 +65,18 @@ export interface PaginationOptions {
 
 interface FetchResult {
   htmlContent: string;
-  source: 'fetch' | 'happy-dom';
+  source: 'fetch' | 'lightpanda';
 }
+
+// 所有抓取层都失败时返回的提示：告诉上层 agent 改用浏览器 MCP 处理此页面。
+const BROWSER_FALLBACK_MESSAGE = `无法获取页面内容。
+
+可能的原因：
+1. 页面需要完整浏览器渲染（如 SPA 应用）
+2. 页面有反爬虫保护
+3. 网络连接问题
+
+建议：请使用浏览器 MCP 处理此页面。`;
 
 // ============ Happy DOM 懒加载 ============
 let happyDomModule: typeof import('happy-dom') | null = null;
@@ -383,6 +394,9 @@ async function extractWithReadability(htmlContent: string, url: string): Promise
     return null;
   }
 
+  // 安装 happy-dom 异常兜底（其 DOM 解析可能抛出异步 DOMException/navigationStart）
+  installHappyDomErrorHandler();
+
   try {
     const { Window } = happyDom;
     const win = new Window({
@@ -407,83 +421,6 @@ async function extractWithReadability(htmlContent: string, url: string): Promise
   } catch (error: any) {
     logMessage(null, 'warning', `Readability extraction failed: ${error.message}`);
     return null;
-  }
-}
-
-// ============ Happy DOM 渲染 ============
-async function fetchWithHappyDom(
-  url: string,
-  timeoutMs: number
-): Promise<FetchResult | null> {
-  if (!ENABLE_JS_RENDER) {
-    return null;
-  }
-
-  installHappyDomErrorHandler();
-
-  const happyDom = await getHappyDom();
-  if (!happyDom) {
-    return null;
-  }
-
-  let browser: InstanceType<typeof happyDom.Browser> | null = null;
-
-  try {
-    const { Browser, BrowserErrorCaptureEnum } = happyDom;
-
-    browser = new Browser({
-      settings: {
-        errorCapture: BrowserErrorCaptureEnum.processLevel,
-        navigator: {
-          userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        },
-        disableJavaScriptFileLoading: true,
-        disableCSSFileLoading: true,
-        disableIframePageLoading: true
-      }
-    });
-
-    const page = browser.newPage();
-    
-    const window = page.mainFrame.window as any;
-    window.alert = () => {};
-    window.confirm = () => false;
-    window.prompt = () => null;
-
-    const timeoutPromise = new Promise<null>((_, reject) => {
-      setTimeout(() => reject(new Error('Happy DOM timeout')), timeoutMs);
-    });
-
-    await Promise.race([
-      page.goto(url),
-      timeoutPromise
-    ]);
-
-    await page.waitUntilComplete();
-
-    const document = page.mainFrame.document;
-    const htmlContent = document.documentElement.outerHTML;
-
-    await browser.close();
-    browser = null;
-
-    if (!htmlContent || htmlContent.trim().length === 0) {
-      return null;
-    }
-
-    return {
-      htmlContent,
-      source: 'happy-dom'
-    };
-  } catch (error: any) {
-    logMessage(null, 'warning', `Happy DOM render failed: ${error.message}`);
-    return null;
-  } finally {
-    if (browser) {
-      try {
-        await browser.close();
-      } catch {}
-    }
   }
 }
 
@@ -729,31 +666,24 @@ async function fetchSingleUrl(
     logMessage(server, "warning", `Layer 1 (fetch) failed for: ${url} - ${error.message}`);
   }
 
-  // 第2层：Happy DOM 渲染（如果第1层失败或内容为空）
+  // 第2层：Lightpanda 动态渲染（如果第1层失败或内容为空）
   if (!fetchResult || fetchResult.htmlContent.trim().length === 0) {
-    logMessage(server, "info", `Trying Layer 2 (Happy DOM) for: ${url}`);
+    logMessage(server, "info", `Trying Layer 2 (Lightpanda) for: ${url}`);
     try {
-      fetchResult = await fetchWithHappyDom(url, timeoutMs);
-      if (fetchResult) {
-        logMessage(server, "info", `Layer 2 (Happy DOM) succeeded for: ${url}`);
+      const rendered = await fetchWithLightpanda(url, timeoutMs);
+      if (rendered) {
+        fetchResult = { htmlContent: rendered.htmlContent, source: 'lightpanda' };
+        logMessage(server, "info", `Layer 2 (Lightpanda) succeeded for: ${url}`);
       }
     } catch (error: any) {
-      logMessage(server, "warning", `Layer 2 (Happy DOM) failed for: ${url} - ${error.message}`);
+      logMessage(server, "warning", `Layer 2 (Lightpanda) failed for: ${url} - ${error.message}`);
     }
   }
 
   // 如果两层都失败
   if (!fetchResult || !fetchResult.htmlContent || fetchResult.htmlContent.trim().length === 0) {
     logMessage(server, "error", `All layers failed for: ${url}`);
-    // 返回提示信息
-    return `无法获取页面内容。
-
-可能的原因：
-1. 页面需要完整浏览器渲染（如 SPA 应用）
-2. 页面有反爬虫保护
-3. 网络连接问题
-
-建议：请使用浏览器 MCP 处理此页面。`;
+    return BROWSER_FALLBACK_MESSAGE;
   }
 
   // 提取正文内容（使用 Readability，所有模式均生效）
@@ -779,6 +709,13 @@ async function fetchSingleUrl(
     return createEmptyContentWarning(url, processedHtml.length, processedHtml);
   }
 
+  // 空壳检测：Lightpanda 渲染成功但正文过短，多为渲染不全/被反爬拦截，
+  // 视为失败，降级交给上层 agent（且不缓存空壳）。
+  if (fetchResult.source === 'lightpanda' && markdownContent.trim().length < LIGHTPANDA_MIN_CONTENT_LENGTH) {
+    logMessage(server, "warning", `Lightpanda content too short (${markdownContent.trim().length} chars) for: ${url}, treating as empty shell`);
+    return BROWSER_FALLBACK_MESSAGE;
+  }
+
   // Cache successful result
   urlContentCache.set(url, fetchResult.htmlContent, markdownContent);
 
@@ -786,7 +723,7 @@ async function fetchSingleUrl(
   const result = applyPaginationOptions(markdownContent, paginationOptions);
 
   const duration = Date.now() - startTime;
-  const sourceLabel = fetchResult.source === 'happy-dom' ? 'Happy DOM' : 'fetch';
+  const sourceLabel = fetchResult.source === 'lightpanda' ? 'Lightpanda' : 'fetch';
   logMessage(server, "info", `Successfully fetched URL via ${sourceLabel}: ${url} (${result.length} chars in ${duration}ms)`);
 
   return result;

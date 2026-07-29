@@ -102,7 +102,7 @@ async function runTests() {
   }, results);
 
   await testFunction('DEFAULT_SEARCH_PAGES default value', () => {
-    assert.equal(DEFAULT_SEARCH_PAGES, 2);
+    assert.equal(DEFAULT_SEARCH_PAGES, 1);
   }, results);
 
   await testFunction('SEARCH_PAGES is a positive number', () => {
