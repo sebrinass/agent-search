@@ -31,21 +31,13 @@ export function createMockFetch(options: FetchMockOptions = {}) {
       throw throwError;
     }
 
-    return {
-      ok,
-      status,
-      statusText,
-      text: async () => body,
-      json: async () => {
-        if (json !== null) {
-          return json;
-        }
-        if (body) {
-          return JSON.parse(body);
-        }
-        throw new Error('No JSON content');
-      }
-    } as Response;
+    // 使用真实 Response 对象，确保 response.body 可流式读取（源码用 getReader 逐块读）
+    const responseBody = body || (json !== null ? JSON.stringify(json) : '');
+    const response = new Response(responseBody, { status, statusText });
+    if (!ok && response.ok) {
+      Object.defineProperty(response, 'ok', { value: false });
+    }
+    return response;
   };
 }
 
@@ -59,14 +51,8 @@ export function createCapturingMockFetch() {
   const mockFetch = async (url: string | URL | Request, options?: RequestInit): Promise<Response> => {
     capturedUrl = url.toString();
     capturedOptions = options;
-    
-    return {
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      text: async () => '<html><body>Test</body></html>',
-      json: async () => ({ results: [] })
-    } as Response;
+
+    return new Response('<html><body>Test</body></html>', { status: 200, statusText: 'OK' });
   };
 
   return {

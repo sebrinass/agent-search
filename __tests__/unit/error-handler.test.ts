@@ -13,14 +13,11 @@ import {
   createNetworkError,
   createServerError,
   createJSONError,
-  createDataError,
-  createNoResultsMessage,
   createURLFormatError,
+  createURLSecurityPolicyError,
   createContentError,
   createConversionError,
-  createTimeoutError,
   createEmptyContentWarning,
-  createUnexpectedError,
   validateEnvironment
 } from '../../src/error-handler.js';
 import { testFunction, createTestResults, printTestSummary } from '../helpers/test-utils.js';
@@ -94,20 +91,15 @@ async function runTests() {
 
   await testFunction('Specialized error creators', () => {
     const context = { searxngUrl: 'https://searx.example.com' };
-    
+
     assert.ok(createJSONError('invalid json', context) instanceof MCPSearXNGError);
-    assert.ok(createDataError({}, context) instanceof MCPSearXNGError);
     assert.ok(createURLFormatError('invalid-url') instanceof MCPSearXNGError);
+    assert.ok(createURLSecurityPolicyError('https://blocked.example.com') instanceof MCPSearXNGError);
     assert.ok(createContentError('test error', 'https://example.com') instanceof MCPSearXNGError);
     assert.ok(createConversionError(new Error('test'), 'https://example.com', '<html>') instanceof MCPSearXNGError);
-    assert.ok(createTimeoutError(5000, 'https://example.com') instanceof MCPSearXNGError);
-    assert.ok(createUnexpectedError(new Error('test'), context) instanceof MCPSearXNGError);
   }, results);
 
   await testFunction('Message creators', () => {
-    assert.ok(typeof createNoResultsMessage('test query') === 'string');
-    assert.ok(createNoResultsMessage('test').includes('No results found'));
-    
     const warning = createEmptyContentWarning('https://example.com', 100, '<html>');
     assert.ok(typeof warning === 'string');
     assert.ok(warning.includes('Content Warning'));

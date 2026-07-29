@@ -8,7 +8,7 @@
 
 import { strict as assert } from 'node:assert';
 import { fetchAndConvertToMarkdown } from '../../src/url-reader.js';
-import { urlCache } from '../../src/cache.js';
+import { urlContentCache } from '../../src/cache.js';
 import { testFunction, createTestResults, printTestSummary } from '../helpers/test-utils.js';
 import { createMockServer } from '../helpers/mock-server.js';
 import { FetchMocker, createMockFetch, createAbortableMockFetch } from '../helpers/mock-fetch.js';
@@ -17,6 +17,9 @@ import { EnvManager } from '../helpers/env-utils.js';
 const results = createTestResults();
 const fetchMocker = new FetchMocker();
 const envManager = new EnvManager();
+
+// 禁用 curl-cffi，强制走原生 fetch，保证 FetchMocker 能拦截请求
+process.env.DISABLE_CURL_CFFI = 'true';
 
 async function runTests() {
   console.log('🧪 Testing: url-reader.ts\n');
@@ -149,7 +152,7 @@ async function runTests() {
 
   await testFunction('Successful HTML to Markdown conversion', async () => {
     const mockServer = createMockServer();
-    urlCache.clear();
+    urlContentCache.clear();
     
     const testHtml = `
       <html>
@@ -179,7 +182,7 @@ async function runTests() {
 
   await testFunction('Character pagination - maxLength', async () => {
     const mockServer = createMockServer();
-    urlCache.clear();
+    urlContentCache.clear();
 
     const testHtml = '<html><body><h1>Test Title</h1><p>This is a long paragraph with lots of content that we can paginate through.</p></body></html>';
     fetchMocker.mock(createMockFetch({ body: testHtml }));
@@ -193,7 +196,7 @@ async function runTests() {
 
   await testFunction('Character pagination - startChar', async () => {
     const mockServer = createMockServer();
-    urlCache.clear();
+    urlContentCache.clear();
 
     const testHtml = '<html><body><h1>Test Title</h1><p>Content here.</p></body></html>';
     fetchMocker.mock(createMockFetch({ body: testHtml }));
@@ -206,7 +209,7 @@ async function runTests() {
 
   await testFunction('Character pagination - both startChar and maxLength', async () => {
     const mockServer = createMockServer();
-    urlCache.clear();
+    urlContentCache.clear();
 
     const testHtml = '<html><body><p>Content for pagination test.</p></body></html>';
     fetchMocker.mock(createMockFetch({ body: testHtml }));
@@ -220,13 +223,16 @@ async function runTests() {
 
   await testFunction('Cache integration with pagination', async () => {
     const mockServer = createMockServer();
-    urlCache.clear();
+    urlContentCache.clear();
 
     let fetchCount = 0;
     const testHtml = '<html><body><h1>Cached Content</h1><p>This content should be cached.</p></body></html>';
 
-    fetchMocker.mock(async () => {
-      fetchCount++;
+    fetchMocker.mock(async (url: string | URL | Request, options?: RequestInit) => {
+      // HEAD 预检不计入抓取次数，只统计正式 GET
+      if (options?.method !== 'HEAD') {
+        fetchCount++;
+      }
       return createMockFetch({ body: testHtml })('', undefined);
     });
 
@@ -240,12 +246,12 @@ async function runTests() {
     assert.equal(fetchCount, 1); // Should not have fetched again
 
     fetchMocker.restore();
-    urlCache.clear();
+    urlContentCache.clear();
   }, results);
 
   await testFunction('Proxy agent integration', async () => {
     const mockServer = createMockServer();
-    urlCache.clear();
+    urlContentCache.clear();
 
     envManager.set('HTTPS_PROXY', 'https://proxy.example.com:8080');
     

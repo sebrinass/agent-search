@@ -7,26 +7,35 @@
  */
 
 import { strict as assert } from 'node:assert';
-import { 
-  clearUrlCache,
-  setUrlCache,
-  getUrlCache,
-  hasUrlCache,
-  deleteUrlCache,
-  clearEmbeddingCache,
-  setEmbeddingCache,
-  getEmbeddingCache,
-  hasEmbeddingCache,
-  clearLinkDedup,
-  addLinkToDedup,
+import {
+  urlContentCache,
+  embeddingCache,
+  linkDedupPool,
   addLinksToDedup,
-  isLinkDuplicate,
-  getUrlCacheStats,
-  getEmbeddingCacheStats,
-  getLinkDedupStats,
-  clearAllCaches
+  isLinkDuplicate
 } from '../../src/cache.js';
 import { testFunction, createTestResults, printTestSummary } from '../helpers/test-utils.js';
+
+// 基于导出的缓存实例封装便捷函数，保持测试主体简洁
+const clearUrlCache = () => urlContentCache.clear();
+const setUrlCache = (url: string, html: string, md: string) => urlContentCache.set(url, html, md);
+const getUrlCache = (url: string) => urlContentCache.get(url);
+const hasUrlCache = (url: string) => urlContentCache.has(url);
+const deleteUrlCache = (url: string) => urlContentCache.delete(url);
+const getUrlCacheStats = () => urlContentCache.getStats();
+const clearEmbeddingCache = () => embeddingCache.clear();
+const setEmbeddingCache = (text: string, emb: Float32Array | number[]) => embeddingCache.set(text, emb);
+const getEmbeddingCache = (text: string) => embeddingCache.get(text);
+const hasEmbeddingCache = (text: string) => embeddingCache.has(text);
+const getEmbeddingCacheStats = () => embeddingCache.getStats();
+const clearLinkDedup = () => linkDedupPool.clear();
+const getLinkDedupStats = () => linkDedupPool.getStats();
+const clearAllCaches = () => {
+  urlContentCache.clear();
+  embeddingCache.clear();
+  linkDedupPool.clear();
+};
+void getEmbeddingCacheStats;
 
 const results = createTestResults();
 
@@ -78,7 +87,7 @@ async function runTests() {
     clearLinkDedup();
 
     assert.equal(isLinkDuplicate('https://test.com'), false);
-    addLinkToDedup('https://test.com');
+    addLinksToDedup(['https://test.com']);
     assert.equal(isLinkDuplicate('https://test.com'), true);
     assert.equal(isLinkDuplicate('https://other.com'), false);
 
@@ -130,7 +139,7 @@ async function runTests() {
 
   await testFunction('Clear all caches', () => {
     setUrlCache('https://test.com', '<html>test</html>', '# Test');
-    addLinkToDedup('https://link.com');
+    addLinksToDedup(['https://link.com']);
     setEmbeddingCache('test', new Float32Array([1, 2, 3]));
 
     clearAllCaches();

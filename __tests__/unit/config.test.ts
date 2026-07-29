@@ -25,11 +25,9 @@ import {
   URL_CACHE_TTL,
   URL_CACHE_SIZE,
   EMBEDDING_CACHE_SIZE,
-  getEmbeddingConfig,
-  getResearchConfig,
-  getSearchConfig,
-  getUrlReaderConfig,
-  getCacheConfig,
+  EMBEDDING_MODEL as EMBEDDING_MODEL_CHECK,
+  SEARCH_TIMEOUT_MS,
+  SEARCH_ENGINES,
 } from '../../src/config.js';
 import { validateEnvironment } from '../../src/error-handler.js';
 import { testFunction, createTestResults, printTestSummary } from '../helpers/test-utils.js';
@@ -103,72 +101,26 @@ async function runTests() {
     assert.equal(SAFE_SEARCH, 0);
   }, results);
 
-  await testFunction('DEFAULT_SEARCH_PAGES depends on embedding enabled', () => {
-    // DEFAULT_SEARCH_PAGES is 3 when embedding is enabled, 1 otherwise
-    assert.ok(DEFAULT_SEARCH_PAGES === 1 || DEFAULT_SEARCH_PAGES === 3);
+  await testFunction('DEFAULT_SEARCH_PAGES default value', () => {
+    assert.equal(DEFAULT_SEARCH_PAGES, 2);
   }, results);
 
   await testFunction('SEARCH_PAGES is a positive number', () => {
     assert.ok(SEARCH_PAGES >= 1, `SEARCH_PAGES should be >= 1, got ${SEARCH_PAGES}`);
   }, results);
 
-  // ============ 配置函数测试 ============
+  // ============ 衍生配置测试 ============
 
-  await testFunction('getEmbeddingConfig returns correct structure', () => {
-    const config = getEmbeddingConfig();
-    assert.ok('enabled' in config);
-    assert.ok('baseUrl' in config);
-    assert.ok('model' in config);
-    assert.ok('timeoutMs' in config);
-    assert.ok('topK' in config);
-    assert.ok('rrfK' in config);
-    assert.equal(config.model, EMBEDDING_MODEL);
-    assert.equal(config.timeoutMs, EMBEDDING_TIMEOUT_MS);
-    assert.equal(config.topK, TOP_K);
-    assert.equal(config.rrfK, RRF_K);
+  await testFunction('EMBEDDING_MODEL is consistent', () => {
+    assert.equal(EMBEDDING_MODEL_CHECK, EMBEDDING_MODEL);
   }, results);
 
-  await testFunction('getResearchConfig returns correct structure', () => {
-    const config = getResearchConfig();
-    assert.ok('maxKeywords' in config);
-    assert.ok('searchTimeoutMs' in config);
-    assert.ok('maxDescriptionLength' in config);
-    assert.equal(config.maxKeywords, MAX_KEYWORDS);
-    assert.equal(config.maxDescriptionLength, MAX_DESCRIPTION_LENGTH);
+  await testFunction('SEARCH_TIMEOUT_MS is a positive number', () => {
+    assert.ok(SEARCH_TIMEOUT_MS > 0, `SEARCH_TIMEOUT_MS should be > 0, got ${SEARCH_TIMEOUT_MS}`);
   }, results);
 
-  await testFunction('getSearchConfig returns correct structure', () => {
-    const config = getSearchConfig();
-    assert.ok('searchPages' in config);
-    assert.ok('searchEngines' in config);
-    assert.ok('searchTimeoutMs' in config);
-    assert.ok('searchLanguage' in config);
-    assert.ok('safeSearch' in config);
-    assert.equal(config.searchPages, SEARCH_PAGES);
-    assert.equal(config.searchLanguage, SEARCH_LANGUAGE);
-    assert.equal(config.safeSearch, SAFE_SEARCH);
-  }, results);
-
-  await testFunction('getUrlReaderConfig returns correct structure', () => {
-    const config = getUrlReaderConfig();
-    assert.ok('fetchTimeoutMs' in config);
-    assert.ok('enableJsRender' in config);
-    assert.ok('enableReadability' in config);
-    assert.equal(config.fetchTimeoutMs, FETCH_TIMEOUT_MS);
-    assert.equal(config.enableJsRender, ENABLE_JS_RENDER);
-    assert.equal(config.enableReadability, ENABLE_READABILITY);
-  }, results);
-
-  await testFunction('getCacheConfig returns correct structure', () => {
-    const config = getCacheConfig();
-    assert.ok('linkDedupTtl' in config);
-    assert.ok('urlCacheTtl' in config);
-    assert.ok('urlCacheSize' in config);
-    assert.ok('embeddingCacheSize' in config);
-    assert.equal(config.linkDedupTtl, LINK_DEDUP_TTL);
-    assert.equal(config.urlCacheTtl, URL_CACHE_TTL);
-    assert.equal(config.urlCacheSize, URL_CACHE_SIZE);
-    assert.equal(config.embeddingCacheSize, EMBEDDING_CACHE_SIZE);
+  await testFunction('SEARCH_ENGINES is a string', () => {
+    assert.ok(typeof SEARCH_ENGINES === 'string');
   }, results);
 
   // ============ validateEnvironment 测试 ============

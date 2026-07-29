@@ -35,6 +35,10 @@ let curlCffiModule: typeof import('curl-cffi') | null = null;
 let curlCffiAvailable: boolean | null = null;
 
 async function getCurlCffi() {
+  // 测试/调试开关：禁用 curl-cffi，强制回退到原生 fetch（便于 mock 拦截）
+  if (process.env.DISABLE_CURL_CFFI === 'true') {
+    return null;
+  }
   if (curlCffiAvailable !== null) {
     return curlCffiAvailable ? curlCffiModule : null;
   }
