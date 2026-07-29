@@ -657,6 +657,28 @@ async function fetchSingleUrl(
   let fetchResult: FetchResult | null = null;
   let lastError: Error | null = null;
 
+  // 提取正文并转 Markdown（Readability + node-html-markdown）。
+  // 抽成局部函数：第1层结果需要先算出正文长度用于 SPA 空壳判断，第2层结果复用同一逻辑。
+  const convertToMarkdown = async (
+    htmlContent: string
+  ): Promise<{ processedHtml: string; markdownContent: string }> => {
+    let processedHtml = htmlContent;
+    if (ENABLE_READABILITY) {
+      const extractedContent = await extractWithReadability(htmlContent, url);
+      if (extractedContent) {
+        processedHtml = extractedContent;
+        logMessage(server, "info", `Readability extracted content for: ${url}`);
+      }
+    }
+    let markdownContent: string;
+    try {
+      markdownContent = NodeHtmlMarkdown.translate(processedHtml);
+    } catch (error: any) {
+      throw createConversionError(error, url, processedHtml);
+    }
+    return { processedHtml, markdownContent };
+  };
+
   // 第1层：fetch 获取原始 HTML
   try {
     fetchResult = await fetchHtmlContent(server, url, timeoutMs);
@@ -666,14 +688,46 @@ async function fetchSingleUrl(
     logMessage(server, "warning", `Layer 1 (fetch) failed for: ${url} - ${error.message}`);
   }
 
-  // 第2层：Lightpanda 动态渲染（如果第1层失败或内容为空）
-  if (!fetchResult || fetchResult.htmlContent.trim().length === 0) {
-    logMessage(server, "info", `Trying Layer 2 (Lightpanda) for: ${url}`);
+  // 第1层结果先转 Markdown，用正文长度判断是否为 SPA 空壳
+  let converted: { processedHtml: string; markdownContent: string } | null = null;
+  let conversionError: Error | null = null;
+  if (fetchResult && fetchResult.htmlContent.trim().length > 0) {
+    try {
+      converted = await convertToMarkdown(fetchResult.htmlContent);
+    } catch (error: any) {
+      conversionError = error;
+      logMessage(server, "warning", `Layer 1 conversion failed for: ${url} - ${error.message}`);
+    }
+  }
+
+  // 第2层：Lightpanda 动态渲染。触发条件：
+  // a) 第1层失败/内容为空/转换失败；
+  // b) 第1层正文过短（SPA 空壳：原始 HTML 只有导航骨架，正文靠 JS 渲染）。
+  const layer1TooShort =
+    converted !== null && converted.markdownContent.trim().length < LIGHTPANDA_MIN_CONTENT_LENGTH;
+  if (!converted || layer1TooShort) {
+    const reason = layer1TooShort
+      ? "layer 1 content too short, possible SPA shell"
+      : "layer 1 failed or empty";
+    logMessage(server, "info", `Trying Layer 2 (Lightpanda) for: ${url} (${reason})`);
     try {
       const rendered = await fetchWithLightpanda(url, timeoutMs);
       if (rendered) {
-        fetchResult = { htmlContent: rendered.htmlContent, source: 'lightpanda' };
-        logMessage(server, "info", `Layer 2 (Lightpanda) succeeded for: ${url}`);
+        const renderedConverted = await convertToMarkdown(rendered.htmlContent);
+        // 第1层完全失败时直接采用渲染结果（后续空壳检测兜底）；
+        // 第1层有短内容时，仅当渲染正文达到空壳阈值且更充实才替换，避免用更差的结果覆盖。
+        const renderedLength = renderedConverted.markdownContent.trim().length;
+        const shouldAdopt = !converted
+          ? true
+          : renderedLength >= LIGHTPANDA_MIN_CONTENT_LENGTH &&
+            renderedLength > converted.markdownContent.trim().length;
+        if (shouldAdopt) {
+          fetchResult = { htmlContent: rendered.htmlContent, source: 'lightpanda' };
+          converted = renderedConverted;
+          logMessage(server, "info", `Layer 2 (Lightpanda) succeeded for: ${url}`);
+        } else {
+          logMessage(server, "info", `Layer 2 (Lightpanda) content not better for: ${url}, keeping layer 1 result`);
+        }
       }
     } catch (error: any) {
       logMessage(server, "warning", `Layer 2 (Lightpanda) failed for: ${url} - ${error.message}`);
@@ -681,28 +735,16 @@ async function fetchSingleUrl(
   }
 
   // 如果两层都失败
-  if (!fetchResult || !fetchResult.htmlContent || fetchResult.htmlContent.trim().length === 0) {
+  if (!fetchResult || !converted) {
+    // 第1层拿到了 HTML 但转换失败、且第2层也没救回来：保持原有的转换错误语义
+    if (conversionError) {
+      throw conversionError;
+    }
     logMessage(server, "error", `All layers failed for: ${url}`);
     return BROWSER_FALLBACK_MESSAGE;
   }
 
-  // 提取正文内容（使用 Readability，所有模式均生效）
-  let processedHtml = fetchResult.htmlContent;
-  if (ENABLE_READABILITY) {
-    const extractedContent = await extractWithReadability(fetchResult.htmlContent, url);
-    if (extractedContent) {
-      processedHtml = extractedContent;
-      logMessage(server, "info", `Readability extracted content for: ${url}`);
-    }
-  }
-
-  // Convert HTML to Markdown
-  let markdownContent: string;
-  try {
-    markdownContent = NodeHtmlMarkdown.translate(processedHtml);
-  } catch (error: any) {
-    throw createConversionError(error, url, processedHtml);
-  }
+  const { processedHtml, markdownContent } = converted;
 
   if (!markdownContent || markdownContent.trim().length === 0) {
     logMessage(server, "warning", `Empty content after conversion: ${url}`);
