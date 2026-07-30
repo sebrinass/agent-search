@@ -107,6 +107,21 @@ export async function createHttpServer(): Promise<express.Application> {
         });
         return;
       }
+    } else if (sessionId && !sessions.has(sessionId)) {
+      // MCP spec: expired/unknown session must return 404 so the client re-initializes
+      console.warn(`[HTTP] POST request rejected - session not found:`, {
+        clientIP: req.ip || req.connection.remoteAddress,
+        sessionId,
+      });
+      res.status(404).json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32001,
+          message: 'Session not found: please re-initialize',
+        },
+        id: null,
+      });
+      return;
     } else {
       console.warn(`[HTTP] POST request rejected - invalid request:`, {
         clientIP: req.ip || req.connection.remoteAddress,
@@ -144,7 +159,8 @@ export async function createHttpServer(): Promise<express.Application> {
         clientIP: req.ip || req.connection.remoteAddress,
         sessionId: sessionId || 'undefined',
       });
-      res.status(400).send('Invalid or missing session ID');
+      // MCP spec: unknown session → 404 (client should re-initialize); missing header → 400
+      res.status(sessionId ? 404 : 400).send(sessionId ? 'Session not found: please re-initialize' : 'Invalid or missing session ID');
       return;
     }
 
@@ -169,7 +185,8 @@ export async function createHttpServer(): Promise<express.Application> {
         clientIP: req.ip || req.connection.remoteAddress,
         sessionId: sessionId || 'undefined',
       });
-      res.status(400).send('Invalid or missing session ID');
+      // MCP spec: unknown session → 404 (client should re-initialize); missing header → 400
+      res.status(sessionId ? 404 : 400).send(sessionId ? 'Session not found: please re-initialize' : 'Invalid or missing session ID');
       return;
     }
 
