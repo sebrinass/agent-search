@@ -27,6 +27,11 @@ export function logMessage(server: Server | null, level: LoggingLevel, message: 
     return;
   }
 
+  // 同时输出到 stderr：docker logs 能看到，方便生产调试。
+  // MCP 客户端仍然走 server.notification（不重复推到控制台时为正式行为，
+  // 但推一份到 stderr 能让运维在容器外也能追踪 debug 日志）。
+  console.error(`[${level.toUpperCase()}] ${message}`);
+
   try {
     server.notification({
       method: "notifications/message",
