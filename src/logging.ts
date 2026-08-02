@@ -1,8 +1,11 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { LoggingLevel } from "@modelcontextprotocol/sdk/types.js";
 
-// Logging state
-let currentLogLevel: LoggingLevel = "info";
+// Logging state — 启动时从 LOG_LEVEL 环境变量读取（兼容 CLI / stdio / HTTP 启动路径），
+// 未设置或值不合法时回退为 info。
+const VALID_LEVELS: LoggingLevel[] = ["debug", "info", "warning", "error"];
+const envLevel = process.env.LOG_LEVEL?.toLowerCase() as LoggingLevel | undefined;
+let currentLogLevel: LoggingLevel = envLevel && VALID_LEVELS.includes(envLevel) ? envLevel : "info";
 
 // Logging helper function
 export function logMessage(server: Server | null, level: LoggingLevel, message: string, data?: unknown): void {
@@ -44,8 +47,7 @@ export function logMessage(server: Server | null, level: LoggingLevel, message: 
 }
 
 export function shouldLog(level: LoggingLevel): boolean {
-  const levels: LoggingLevel[] = ["debug", "info", "warning", "error"];
-  return levels.indexOf(level) >= levels.indexOf(currentLogLevel);
+  return VALID_LEVELS.indexOf(level) >= VALID_LEVELS.indexOf(currentLogLevel);
 }
 
 export function setLogLevel(level: LoggingLevel): void {
