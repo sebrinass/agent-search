@@ -680,12 +680,19 @@ async function fetchSingleUrl(
   };
 
   // 第1层：fetch 获取原始 HTML
-  try {
-    fetchResult = await fetchHtmlContent(server, url, timeoutMs);
-    logMessage(server, "info", `Layer 1 (fetch) succeeded for: ${url}`);
-  } catch (error: any) {
-    lastError = error;
-    logMessage(server, "warning", `Layer 1 (fetch) failed for: ${url} - ${error.message}`);
+  // 诊断开关：FORCE_LIGHTPANDA=true 时跳过第1层直接走 Lightpanda，验证浏览器竞底能力。
+  // 默认 false，不影响正式使用。
+  const forceLightpanda = process.env.FORCE_LIGHTPANDA === 'true';
+  if (forceLightpanda) {
+    logMessage(server, "info", `FORCE_LIGHTPANDA=true, skipping Layer 1 for: ${url}`);
+  } else {
+    try {
+      fetchResult = await fetchHtmlContent(server, url, timeoutMs);
+      logMessage(server, "info", `Layer 1 (fetch) succeeded for: ${url}`);
+    } catch (error: any) {
+      lastError = error;
+      logMessage(server, "warning", `Layer 1 (fetch) failed for: ${url} - ${error.message}`);
+    }
   }
 
   // 第1层结果先转 Markdown，用正文长度判断是否为 SPA 空壳
