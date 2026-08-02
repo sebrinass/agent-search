@@ -38,6 +38,9 @@ COPY --from=builder /app/package-lock.json /app/package-lock.json
 
 ENV NODE_ENV=production
 
-RUN npm ci --ignore-scripts --omit-dev
+RUN npm ci --ignore-scripts --omit-dev \
+ # curl-cffi 需要跳过 --ignore-scripts 后手动跑 install 脚本，才能装上 native libcurl。
+ # 不补上这一步运行时报 "Global libs directory not found"，被迫降级到 native fetch。
+ && node node_modules/curl-cffi/scripts/install.cjs
 
 ENTRYPOINT ["node", "dist/index.js"]
