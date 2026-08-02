@@ -43,17 +43,7 @@ export const MAX_DESCRIPTION_LENGTH = parseInt(process.env.MAX_DESCRIPTION_LENGT
 
 // ============ URL 读取相关配置 ============
 export const FETCH_TIMEOUT_MS = parseInt(process.env.FETCH_TIMEOUT_MS || '30000', 10);
-export const ENABLE_JS_RENDER = process.env.ENABLE_JS_RENDER !== 'false';
 export const ENABLE_READABILITY = process.env.ENABLE_READABILITY !== 'false';
-
-// ============ Lightpanda 动态渲染配置 ============
-// Lightpanda 是轻量无头浏览器，作为 Read 第 2 层兜底渲染动态页面（SPA）。
-// 采用一次性 spawn 模式（读完即退，闲时零内存），仅在需要时启动。
-// 可执行文件路径：未设置或文件不存在则自动跳过第 2 层（与 curl-cffi 装不上就降级同风格）。
-// Docker 镜像内默认置于 /usr/local/bin/lightpanda（由 Dockerfile 设置该环境变量）。
-export const LIGHTPANDA_EXECUTABLE_PATH = process.env.LIGHTPANDA_EXECUTABLE_PATH || '';
-// 渲染后正文的最小字符数：低于此值视为"空壳"（渲染失败/被反爬拦截），降级交给上层 agent。
-export const LIGHTPANDA_MIN_CONTENT_LENGTH = parseInt(process.env.LIGHTPANDA_MIN_CONTENT_LENGTH || '200', 10);
 
 // ============ 缓存相关配置 ============
 export const LINK_DEDUP_TTL = parseInt(process.env.LINK_DEDUP_TTL || '86400', 10);

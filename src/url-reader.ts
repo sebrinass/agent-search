@@ -21,9 +21,7 @@ import {
 import {
   FETCH_TIMEOUT_MS,
   ENABLE_READABILITY,
-  LIGHTPANDA_MIN_CONTENT_LENGTH
 } from "./config.js";
-import { fetchWithLightpanda } from "./lightpanda.js";
 
 // ============ 安全限制常量 ============
 // URL 读取最大内容长度（默认 5MB），可通过 URL_READ_MAX_CONTENT_LENGTH_BYTES 环境变量覆盖
@@ -65,7 +63,7 @@ export interface PaginationOptions {
 
 interface FetchResult {
   htmlContent: string;
-  source: 'fetch' | 'lightpanda';
+  source: 'fetch';
 }
 
 // 所有抓取层都失败时返回的提示：告诉上层 agent 改用浏览器 MCP 处理此页面。
@@ -679,90 +677,35 @@ async function fetchSingleUrl(
     return { processedHtml, markdownContent };
   };
 
-  // 第1层：fetch 获取原始 HTML
-  // 诊断开关：FORCE_LIGHTPANDA=true 时跳过第1层直接走 Lightpanda，验证浏览器竞底能力。
-  // 默认 false，不影响正式使用。
-  const forceLightpanda = process.env.FORCE_LIGHTPANDA === 'true';
-  if (forceLightpanda) {
-    logMessage(server, "info", `FORCE_LIGHTPANDA=true, skipping Layer 1 for: ${url}`);
-  } else {
-    try {
-      fetchResult = await fetchHtmlContent(server, url, timeoutMs);
-      logMessage(server, "info", `Layer 1 (fetch) succeeded for: ${url}`);
-    } catch (error: any) {
-      lastError = error;
-      logMessage(server, "warning", `Layer 1 (fetch) failed for: ${url} - ${error.message}`);
-    }
+  // 第1层：fetch 获取原始 HTML（唯一层）
+  // 动态渲染场景交给上层 Playwright MCP，Read 工具只负责拉静态 / SSR 内容。
+  try {
+    fetchResult = await fetchHtmlContent(server, url, timeoutMs);
+    logMessage(server, "info", `Layer 1 (fetch) succeeded for: ${url}`);
+  } catch (error: any) {
+    lastError = error;
+    logMessage(server, "warning", `Layer 1 (fetch) failed for: ${url} - ${error.message}`);
   }
 
-  // 第1层结果先转 Markdown，用正文长度判断是否为 SPA 空壳
-  let converted: { processedHtml: string; markdownContent: string } | null = null;
-  let conversionError: Error | null = null;
-  if (fetchResult && fetchResult.htmlContent.trim().length > 0) {
-    try {
-      converted = await convertToMarkdown(fetchResult.htmlContent);
-    } catch (error: any) {
-      conversionError = error;
-      logMessage(server, "warning", `Layer 1 conversion failed for: ${url} - ${error.message}`);
-    }
-  }
-
-  // 第2层：Lightpanda 动态渲染。触发条件：
-  // a) 第1层失败/内容为空/转换失败；
-  // b) 第1层正文过短（SPA 空壳：原始 HTML 只有导航骨架，正文靠 JS 渲染）。
-  const layer1TooShort =
-    converted !== null && converted.markdownContent.trim().length < LIGHTPANDA_MIN_CONTENT_LENGTH;
-  if (!converted || layer1TooShort) {
-    const reason = layer1TooShort
-      ? "layer 1 content too short, possible SPA shell"
-      : "layer 1 failed or empty";
-    logMessage(server, "info", `Trying Layer 2 (Lightpanda) for: ${url} (${reason})`);
-    try {
-      const rendered = await fetchWithLightpanda(url, timeoutMs);
-      if (rendered) {
-        const renderedConverted = await convertToMarkdown(rendered.htmlContent);
-        // 第1层完全失败时直接采用渲染结果（后续空壳检测兜底）；
-        // 第1层有短内容时，仅当渲染正文达到空壳阈值且更充实才替换，避免用更差的结果覆盖。
-        const renderedLength = renderedConverted.markdownContent.trim().length;
-        const shouldAdopt = !converted
-          ? true
-          : renderedLength >= LIGHTPANDA_MIN_CONTENT_LENGTH &&
-            renderedLength > converted.markdownContent.trim().length;
-        if (shouldAdopt) {
-          fetchResult = { htmlContent: rendered.htmlContent, source: 'lightpanda' };
-          converted = renderedConverted;
-          logMessage(server, "info", `Layer 2 (Lightpanda) succeeded for: ${url}`);
-        } else {
-          logMessage(server, "info", `Layer 2 (Lightpanda) content not better for: ${url}, keeping layer 1 result`);
-        }
-      }
-    } catch (error: any) {
-      logMessage(server, "warning", `Layer 2 (Lightpanda) failed for: ${url} - ${error.message}`);
-    }
-  }
-
-  // 如果两层都失败
-  if (!fetchResult || !converted) {
-    // 第1层拿到了 HTML 但转换失败、且第2层也没救回来：保持原有的转换错误语义
-    if (conversionError) {
-      throw conversionError;
-    }
-    logMessage(server, "error", `All layers failed for: ${url}`);
+  // 第1层结果转 Markdown
+  let processedHtml: string;
+  let markdownContent: string;
+  if (!fetchResult || fetchResult.htmlContent.trim().length === 0) {
+    logMessage(server, "error", `Layer 1 returned empty content for: ${url}`);
     return BROWSER_FALLBACK_MESSAGE;
   }
-
-  const { processedHtml, markdownContent } = converted;
+  try {
+    const converted = await convertToMarkdown(fetchResult.htmlContent);
+    processedHtml = converted.processedHtml;
+    markdownContent = converted.markdownContent;
+  } catch (error: any) {
+    // 转换错误保持原有语义向上抛
+    throw error;
+  }
 
   if (!markdownContent || markdownContent.trim().length === 0) {
     logMessage(server, "warning", `Empty content after conversion: ${url}`);
     return createEmptyContentWarning(url, processedHtml.length, processedHtml);
-  }
-
-  // 空壳检测：Lightpanda 渲染成功但正文过短，多为渲染不全/被反爬拦截，
-  // 视为失败，降级交给上层 agent（且不缓存空壳）。
-  if (fetchResult.source === 'lightpanda' && markdownContent.trim().length < LIGHTPANDA_MIN_CONTENT_LENGTH) {
-    logMessage(server, "warning", `Lightpanda content too short (${markdownContent.trim().length} chars) for: ${url}, treating as empty shell`);
-    return BROWSER_FALLBACK_MESSAGE;
   }
 
   // Cache successful result
@@ -772,8 +715,7 @@ async function fetchSingleUrl(
   const result = applyPaginationOptions(markdownContent, paginationOptions);
 
   const duration = Date.now() - startTime;
-  const sourceLabel = fetchResult.source === 'lightpanda' ? 'Lightpanda' : 'fetch';
-  logMessage(server, "info", `Successfully fetched URL via ${sourceLabel}: ${url} (${result.length} chars in ${duration}ms)`);
+  logMessage(server, "info", `Successfully fetched URL via fetch: ${url} (${result.length} chars in ${duration}ms)`);
 
   return result;
 }

@@ -19,7 +19,6 @@ import {
   MAX_KEYWORDS,
   MAX_DESCRIPTION_LENGTH,
   FETCH_TIMEOUT_MS,
-  ENABLE_JS_RENDER,
   ENABLE_READABILITY,
   LINK_DEDUP_TTL,
   URL_CACHE_TTL,
@@ -67,10 +66,6 @@ async function runTests() {
 
   await testFunction('FETCH_TIMEOUT_MS default value', () => {
     assert.equal(FETCH_TIMEOUT_MS, 30000);
-  }, results);
-
-  await testFunction('ENABLE_JS_RENDER default is true', () => {
-    assert.equal(ENABLE_JS_RENDER, true);
   }, results);
 
   await testFunction('ENABLE_READABILITY default is true', () => {
