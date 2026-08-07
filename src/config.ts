@@ -22,6 +22,15 @@ export const isEmbeddingEnabled = !!(EMBEDDING_API_KEY || EMBEDDING_BASE_URL);
 // ============ 嵌入超时配置 ============
 export const EMBEDDING_TIMEOUT_MS = parseInt(process.env.EMBEDDING_TIMEOUT_MS || '90000', 10);
 
+// ============ Rerank 相关配置 ============
+// 与 embedding 二选一：配置了 rerank 则优先走纯 cross-encoder 重排，忽略 embedding 设置。
+// 协议兼容 Jina/Cohere/SiliconFlow/Together 的 /rerank 端点。
+export const RERANK_BASE_URL = process.env.RERANK_BASE_URL || '';
+export const RERANK_API_KEY = process.env.RERANK_API_KEY || '';
+export const RERANK_MODEL = process.env.RERANK_MODEL || 'jina-reranker-v2-base-multilingual';
+export const RERANK_TIMEOUT_MS = parseInt(process.env.RERANK_TIMEOUT_MS || '30000', 10);
+export const isRerankEnabled = !!(RERANK_BASE_URL || RERANK_API_KEY);
+
 // ============ 搜索相关配置 ============
 // 默认每个关键词只抓 1 页：SearXNG 首页即为其认定最相关的约 10 条，
 // 抓更多页多为长尾、还会成倍增加本地 embedding 的计算量（iGPU 低功耗环境敏感）。
