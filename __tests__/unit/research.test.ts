@@ -51,24 +51,24 @@ async function runTests() {
     assert.equal(parsed.searchResults, undefined);
   }, results);
 
-  await testFunction('processSearch returns message when keywords exceed MAX_KEYWORDS', async () => {
-    const server = new ResearchServer();
-    // MAX_KEYWORDS defaults to 3, provide 5 keywords
-    const input: SearchInput = {
-      searchedKeywords: ['kw1', 'kw2', 'kw3', 'kw4', 'kw5']
-    };
+await testFunction('processSearch returns message when keywords exceed MAX_KEYWORDS', async () => {
+	    const server = new ResearchServer();
+	    // MAX_KEYWORDS defaults to 3, provide 4 keywords
+	    const input: SearchInput = {
+	      searchedKeywords: ['kw1', 'kw2', 'kw3', 'kw4']
+	    };
 
-    // Mock fetch to avoid real network calls
-    fetchMocker.mock(createMockFetch({ json: { results: [] } }));
+	    // Mock fetch to avoid real network calls
+	    fetchMocker.mock(createMockFetch({ json: { results: [] } }));
 
-    const result = await server.processSearch(input);
+	    const result = await server.processSearch(input);
 
-    const parsed = JSON.parse(result.content[0].text);
-    assert.ok(parsed.message, 'Should have a message about skipped keywords');
-    assert.ok(parsed.message.includes('3'), 'Message should mention the keyword limit');
+	    const parsed = JSON.parse(result.content[0].text);
+	    assert.ok(parsed.message, 'Should have a message about skipped keywords');
+	    assert.ok(parsed.message.includes('3'), 'Message should mention the keyword limit');
 
-    fetchMocker.restore();
-  }, results);
+	    fetchMocker.restore();
+	  }, results);
 
   // ============ SearchInput 接口 ============
 

@@ -29,6 +29,8 @@ export const RERANK_BASE_URL = process.env.RERANK_BASE_URL || '';
 export const RERANK_API_KEY = process.env.RERANK_API_KEY || '';
 export const RERANK_MODEL = process.env.RERANK_MODEL || 'jina-reranker-v2-base-multilingual';
 export const RERANK_TIMEOUT_MS = parseInt(process.env.RERANK_TIMEOUT_MS || '30000', 10);
+export const RERANK_MAX_TEXT_LENGTH = parseInt(process.env.RERANK_MAX_TEXT_LENGTH || '300', 10);
+export const RERANK_CACHE_SIZE = parseInt(process.env.RERANK_CACHE_SIZE || '100', 10);
 export const isRerankEnabled = !!(RERANK_BASE_URL || RERANK_API_KEY);
 
 // ============ 搜索相关配置 ============

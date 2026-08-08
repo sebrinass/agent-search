@@ -4,7 +4,8 @@ import {
   LINK_DEDUP_TTL,
   URL_CACHE_TTL,
   URL_CACHE_SIZE,
-  EMBEDDING_CACHE_SIZE
+  EMBEDDING_CACHE_SIZE,
+  RERANK_CACHE_SIZE,
 } from "./config.js";
 
 const LINK_DEDUP_TTL_MS = LINK_DEDUP_TTL * 1000;
@@ -203,12 +204,60 @@ class EmbeddingCache {
   }
 }
 
+// ============ 4. Rerank 结果缓存 ============
+/**
+ * Rerank 结果缓存
+ * - 大小：可配置，默认 100 条
+ * - TTL：30 分钟（固定）
+ * - 键：query + 文档 URL 列表的 MD5 hash
+ * - 值：rerank 后的 ScoredResult 数组
+ */
+class RerankCache {
+  private cache: QuickLRU<string, unknown[]>;
+
+  constructor() {
+    this.cache = new QuickLRU<string, unknown[]>({
+      maxSize: RERANK_CACHE_SIZE,
+      maxAge: 30 * 60 * 1000,
+    });
+  }
+
+  private buildKey(query: string, docUrls: string[]): string {
+    const sorted = [...docUrls].sort();
+    const raw = `${query}||${sorted.join('|')}`;
+    return crypto.createHash('md5').update(raw).digest('hex');
+  }
+
+  get(query: string, docUrls: string[]): unknown[] | null {
+    const key = this.buildKey(query, docUrls);
+    const entry = this.cache.get(key);
+    return entry ? (Array.isArray(entry) ? entry : null) : null;
+  }
+
+  set(query: string, docUrls: string[], results: unknown[]): void {
+    const key = this.buildKey(query, docUrls);
+    this.cache.set(key, results);
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+
+  getStats(): { size: number; maxSize: number } {
+    return {
+      size: this.cache.size,
+      maxSize: this.cache.maxSize,
+    };
+  }
+}
+
 // ============ 导出实例和接口 ============
 
 // 单例实例
 export const linkDedupPool = new LinkDedupPool();
 export const urlContentCache = new UrlContentCache();
 export const embeddingCache = new EmbeddingCache();
+export const rerankCache = new RerankCache();
 
 // 便捷函数：链接去重
 export function isLinkDuplicate(url: string): boolean {

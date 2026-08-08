@@ -18,11 +18,13 @@ import {
   RERANK_API_KEY,
   RERANK_MODEL,
   RERANK_TIMEOUT_MS,
+  RERANK_MAX_TEXT_LENGTH,
   isRerankEnabled,
   isEmbeddingEnabled,
   TOP_K,
 } from './config.js';
 import { logMessage } from './logging.js';
+import { rerankCache } from './cache.js';
 import { rerankWithHybridSearch, type SearchResult, type ScoredResult } from './embedding.js';
 
 // 复用 embedding.ts 的类型，保持 research.ts 调用处类型不变
@@ -121,9 +123,31 @@ async function callRerankApi(query: string, documents: string[], topN: number): 
 }
 
 // ============ 纯 cross-encoder rerank ============
+/**
+ * 拼装发送给 rerank API 的文档文本。
+ * cross-encoder 计算量正比于输入长度，且模型自带 max sequence length，
+ * 发超长正文会被模型内部截断，纯属浪费。故：
+ * - title 完整保留（对相关性判断权重最大）
+ * - content 截前 RERANK_MAX_TEXT_LENGTH 字符
+ * - 总长封顶 RERANK_MAX_TEXT_LENGTH，与 embedding 双塔口径对齐
+ */
+function buildRerankDocument(result: SearchResult): string {
+  const title = result.title ?? '';
+  const content = (result.content ?? '').slice(0, RERANK_MAX_TEXT_LENGTH);
+  return `${title} ${content}`.trim().slice(0, RERANK_MAX_TEXT_LENGTH);
+}
+
 async function rerankWithCrossEncoder(query: string, results: SearchResult[]): Promise<ScoredResult[]> {
-  // 拼装文档文本：title + content，与 embedding 双塔保持一致的输入口径
-  const documents = results.map(r => `${r.title} ${r.content}`.trim());
+  // 拼装文档文本：title 完整 + content 截断，与 embedding 双塔保持一致口径
+  const documents = results.map(buildRerankDocument);
+
+  // 缓存命中：同一 query + 同一批 URL 直接返回，避免重复烧模型
+  const docUrls = results.map(r => r.url);
+  const cached = rerankCache.get(query, docUrls);
+  if (cached) {
+    logMessage(null, 'info', `Rerank 缓存命中（query: "${query}"）`);
+    return cached as ScoredResult[];
+  }
 
   const data = await callRerankApi(query, documents, TOP_K);
 
@@ -164,6 +188,9 @@ async function rerankWithCrossEncoder(query: string, results: SearchResult[]): P
       }
     }
   }
+
+  // 写入缓存
+  rerankCache.set(query, docUrls, scored);
 
   return scored.slice(0, TOP_K);
 }
