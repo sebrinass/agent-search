@@ -11,7 +11,7 @@ import { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { logMessage } from "./logging.js";
 import { fetchSinglePage } from "./search.js";
-import { rerankWithHybridSearch, type SearchResult } from "./embedding.js";
+import { rerankResults, type SearchResult } from "./rerank.js";
 import { addLinksToDedup, isLinkDuplicate } from "./cache.js";
 import { loadBlacklist, isBlacklisted } from "./blacklist.js";
 import {
@@ -151,7 +151,7 @@ export class ResearchServer {
         };
       }
 
-      const rerankedResults = await rerankWithHybridSearch(keyword, filteredResults);
+      const rerankedResults = await rerankResults(keyword, filteredResults);
 
       const dedupedResults: SearchResultItem[] = [];
       const newUrls: string[] = [];
