@@ -105,6 +105,7 @@ jobs:
             echo "docker run -d --name agent-search \\"
             echo "  -p 3000:3000 \\"
             echo "  -e SEARXNG_URL=http://192.168.1.243:8080 \\"
+            echo "  -e RERANK_BASE_URL=http://192.168.1.243:11434 \\"
             echo "  -e MCP_HTTP_PORT=3000 \\"
             echo "  --restart unless-stopped \\"
             echo "  ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}"

@@ -1,4 +1,4 @@
-import { Tool } from "@modelcontextprotocol/sdk/types.js";
+import { Tool } from "@modelcontextprotocol/server";
 
 declare global {
   interface RequestInit {
@@ -17,8 +17,8 @@ export interface SearXNGWeb {
 }
 
 export const READ_URL_TOOL: Tool = {
-  name: "read",
-  description: `读取 URL 内容
+  name: "urls_read",
+  description: `读取 URL 内容（网页自动转 Markdown，PDF 自动本地解析）
 
 功能：
 1. 多URL批量读取

@@ -124,6 +124,12 @@ export function validateEnvironment(): string | null {
     }
   }
 
+  const rerankBaseUrl = process.env.RERANK_BASE_URL;
+  const rerankApiKey = process.env.RERANK_API_KEY;
+  if (!rerankBaseUrl && !rerankApiKey) {
+    issues.push("RERANK_BASE_URL or RERANK_API_KEY not set (rerank 是唯一的搜索排序方式，必须配置)");
+  }
+
   const authUsername = process.env.AUTH_USERNAME;
   const authPassword = process.env.AUTH_PASSWORD;
   

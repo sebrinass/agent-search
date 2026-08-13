@@ -1,4 +1,4 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { Server } from "@modelcontextprotocol/server";
 import { SearXNGWeb } from "./types.js";
 import { createProxyAgent } from "./proxy.js";
 import {

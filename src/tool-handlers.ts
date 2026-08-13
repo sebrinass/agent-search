@@ -1,12 +1,4 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-  SetLevelRequestSchema,
-  ListResourcesRequestSchema,
-  ReadResourceRequestSchema,
-  LoggingLevel,
-} from "@modelcontextprotocol/sdk/types.js";
+import { Server, LoggingLevel } from "@modelcontextprotocol/server";
 import { READ_URL_TOOL, isWebUrlReadArgs } from "./types.js";
 import { logMessage, setLogLevel } from "./logging.js";
 import { fetchAndConvertToMarkdown, PaginationOptions } from "./url-reader.js";
@@ -21,19 +13,19 @@ import { FETCH_TIMEOUT_MS } from "./config.js";
 export function registerRequestHandlers(server: Server, researchServer: ResearchServer): void {
   let currentLogLevel: LoggingLevel = "info";
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => {
+  server.setRequestHandler('tools/list', async () => {
     logMessage(server, "debug", "Handling list_tools request");
     return {
       tools: [SEARCH_TOOL, ...getToolDefinitions()],
     };
   });
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler('tools/call', async (request) => {
     const { name, arguments: args } = request.params;
     return handleToolCall(server, researchServer, name, args);
   });
 
-  server.setRequestHandler(SetLevelRequestSchema, async (request) => {
+  server.setRequestHandler('logging/setLevel', async (request) => {
     const { level } = request.params;
     logMessage(server, "info", `Setting log level to: ${level}`);
     currentLogLevel = level;
@@ -41,7 +33,7 @@ export function registerRequestHandlers(server: Server, researchServer: Research
     return {};
   });
 
-  server.setRequestHandler(ListResourcesRequestSchema, async () => {
+  server.setRequestHandler('resources/list', async () => {
     logMessage(server, "debug", "Handling list_resources request");
     return {
       resources: [
@@ -61,7 +53,7 @@ export function registerRequestHandlers(server: Server, researchServer: Research
     };
   });
 
-  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+  server.setRequestHandler('resources/read', async (request) => {
     const { uri } = request.params;
     logMessage(server, "debug", `Handling read_resource request for: ${uri}`);
 
@@ -165,10 +157,10 @@ export async function handleToolCall(
 
   try {
     switch (toolName) {
-      case "read":
+      case "urls_read":
         return await handleReadTool(server, args);
 
-      case "search":
+      case "web_search":
         return await handleSearchTool(researchServer, args);
 
       default:

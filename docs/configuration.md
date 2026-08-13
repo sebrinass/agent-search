@@ -6,7 +6,7 @@ agent-search 的完整环境变量配置。
 
 ### SEARXNG_URL
 
-SearXNG 实例地址，这是唯一必需的配置项。
+SearXNG 实例地址。
 
 ```bash
 SEARXNG_URL=http://localhost:8080
@@ -17,62 +17,66 @@ SEARXNG_URL=http://localhost:8080
 - Docker 内部通信: `http://searxng:8080`
 - 远程实例: `https://search.example.com`
 
+### RERANK_BASE_URL / RERANK_API_KEY
+
+rerank 服务地址或 API 密钥（二选一，MCP 服务模式启动时强制校验）。
+
+**本地推理（推荐，零成本）：**
+
+```bash
+RERANK_BASE_URL=http://localhost:11434
+```
+
+**云端 API（Jina/Cohere/SiliconFlow/Together 等）：**
+
+```bash
+RERANK_BASE_URL=https://api.jina.ai/v1
+RERANK_API_KEY=jina_xxxxx
+```
+
 ---
 
-## 混合检索配置（可选）
+## Rerank 重排配置（必填）
 
-启用 Embedding 重排序可将搜索相关性从 ~50% 提升至 ~80%。
+### RERANK_MODEL
 
-### EMBEDDING_API_KEY
-
-OpenAI 兼容 API 密钥。使用 Ollama 本地部署时无需配置。
+rerank 模型名称。
 
 ```bash
-EMBEDDING_API_KEY=sk-xxxxx
+RERANK_MODEL=jina-reranker-v2-base-multilingual
 ```
 
-### EMBEDDING_BASE_URL
+**默认值：** `jina-reranker-v2-base-multilingual`
 
-Embedding API 端点地址。
+### RERANK_TIMEOUT_MS
+
+rerank 调用超时（毫秒）。超时或失败时自动降级为 SearXNG 原始排序，搜索不中断。
 
 ```bash
-EMBEDDING_BASE_URL=http://localhost:11434
+RERANK_TIMEOUT_MS=30000
 ```
 
-**默认值：** 空（未设置）
-**备选逻辑：** 若未设置 `EMBEDDING_BASE_URL`，则使用 `OLLAMA_HOST` 的值
+**默认值：** `30000`（30 秒）
 
-**常用端点：**
-| 服务 | 端点地址 |
-|------|----------|
-| Ollama | `http://localhost:11434` |
-| OpenAI | `https://api.openai.com/v1` |
-| Jina | `https://api.jina.ai/v1` |
+### RERANK_MAX_TEXT_LENGTH
 
-### OLLAMA_HOST
-
-Ollama 服务地址。当未设置 `EMBEDDING_BASE_URL` 时，将使用此值。
+发给 rerank 的单条文档最大字符数（title 完整保留 + content 截断）。
 
 ```bash
-OLLAMA_HOST=http://localhost:11434
+RERANK_MAX_TEXT_LENGTH=300
 ```
 
-### EMBEDDING_MODEL
+**默认值：** `300`
 
-嵌入模型名称。
+### RERANK_CACHE_SIZE
+
+rerank 结果缓存条目数（同一 query + 同一批 URL 直接命中，避免重复推理）。
 
 ```bash
-EMBEDDING_MODEL=nomic-embed-text
+RERANK_CACHE_SIZE=100
 ```
 
-**默认值：** `nomic-embed-text`
-
-**推荐模型：**
-| 服务 | 推荐模型 |
-|------|----------|
-| Ollama | `nomic-embed-text`, `mxbai-embed-large` |
-| OpenAI | `text-embedding-3-small` |
-| Jina | `jina-embeddings-v5-nano` |
+**默认值：** `100`
 
 ### TOP_K
 
@@ -84,39 +88,16 @@ TOP_K=5
 
 **默认值：** `5`
 
-### EMBEDDING_TIMEOUT_MS
-
-嵌入模型超时时间（毫秒）。超时后自动降级为纯文本检索（BM25）。
-
-```bash
-EMBEDDING_TIMEOUT_MS=90000
-```
-
-**默认值：** `90000`（90 秒）
-
-**说明：**
-- 搜索超时会自动设置为 `EMBEDDING_TIMEOUT_MS + 10000`，确保降级后有足够时间完成检索
-- 嵌入模型响应慢时，超时后会输出日志提示并降级为纯文本检索
-
 ---
 
 ## 搜索控制配置（可选）
-
-### 搜索模式
-
-搜索模式根据 `EMBEDDING_BASE_URL` 配置自动判断，无需手动指定：
-
-- **未配置 `EMBEDDING_BASE_URL`** — 快速搜索，直接信任 SearXNG 原始排序，响应速度快
-- **配置了 `EMBEDDING_BASE_URL`** — 精准搜索，使用 Embedding 重排序提升相关性
-
-**说明：** 搜索模式由系统根据嵌入模型配置自动切换，无需在调用参数中指定 mode。
 
 ### SEARCH_PAGES
 
 搜索页数，每页约 10 条结果。
 
 ```bash
-SEARCH_PAGES=3
+SEARCH_PAGES=1
 ```
 
 **默认值：** `1`
@@ -133,17 +114,13 @@ SEARCH_ENGINES=google,baidu,bing
 
 ### SEARCH_TIMEOUT_MS
 
-MCP 搜索工具超时时间（毫秒）。
+搜索超时时间（毫秒）。
 
 ```bash
-SEARCH_TIMEOUT_MS=40000
+SEARCH_TIMEOUT_MS=60000
 ```
 
-**默认值：** `EMBEDDING_TIMEOUT_MS + 10000`（嵌入超时 + 10 秒缓冲）
-
-**说明：**
-- 默认自动计算，确保嵌入降级后有足够时间完成纯文本检索
-- 如需手动设置，建议大于 `EMBEDDING_TIMEOUT_MS` 至少 10 秒
+**默认值：** `60000`（60 秒）
 
 ### SEARCH_LANGUAGE
 
@@ -179,7 +156,7 @@ MAX_KEYWORDS=3
 
 ### MAX_DESCRIPTION_LENGTH
 
-搜索结果描述最大长度。
+搜索结果描述最大长度（有意的保守值：控制返回体量，信息已足够）。
 
 ```bash
 MAX_DESCRIPTION_LENGTH=200
@@ -190,18 +167,6 @@ MAX_DESCRIPTION_LENGTH=200
 ---
 
 ## URL 读取配置（可选）
-
-### ENABLE_JS_RENDER
-
-启用 JS 渲染降级。当普通请求（curl-cffi / fetch）拿到的是需要 JS 渲染的空壳页面（SPA）时，
-第 2 层用 Lightpanda 轻量无头浏览器执行 JS 拿到渲染后的内容。需同时配置 `LIGHTPANDA_EXECUTABLE_PATH`
-且二进制存在才生效；未配置则自动跳过该层（不影响普通抓取）。
-
-```bash
-ENABLE_JS_RENDER=true
-```
-
-**默认值：** `true`
 
 ### ENABLE_READABILITY
 
@@ -223,37 +188,23 @@ FETCH_TIMEOUT_MS=30000
 
 **默认值：** `30000`（30 秒）
 
-### LIGHTPANDA_EXECUTABLE_PATH
+### URL_READ_MAX_CONTENT_LENGTH_BYTES
 
-Lightpanda 无头浏览器可执行文件路径，用于 Read 工具第 2 层渲染动态页面（SPA）。
-采用一次性启动模式（读完即退，闲时零内存）。未设置或文件不存在则自动跳过第 2 层。
-
-```bash
-LIGHTPANDA_EXECUTABLE_PATH=/usr/local/bin/lightpanda
-```
-
-**默认值：** 空（不启用）。Docker 镜像内默认置于 `/usr/local/bin/lightpanda`。
-
-> Lightpanda 只负责“读取渲染后的内容”，不支持截图、复杂交互与反爬；这类需求请交由完整浏览器 MCP 处理。
-
-### LIGHTPANDA_MIN_CONTENT_LENGTH
-
-Lightpanda 渲染后正文的最小字符数。低于此值视为“空壳”（渲染不全或被反爬拦截），
-降级返回提示交由上层 agent 处理，且不缓存。
+URL 读取最大内容长度（字节），超出即报错并建议用分页/章节提取。
 
 ```bash
-LIGHTPANDA_MIN_CONTENT_LENGTH=200
+URL_READ_MAX_CONTENT_LENGTH_BYTES=5242880
 ```
 
-**默认值：** `200`
+**默认值：** `5242880`（5 MB）
+
+### DISABLE_CURL_CFFI
+
+设为 `true` 可禁用 curl-cffi（浏览器 TLS 指纹抓取），回退原生 fetch（便于测试/mock）。
 
 ### USER_AGENT
 
 HTTP 请求 User-Agent。
-
-```bash
-USER_AGENT=Mozilla/5.0 ...
-```
 
 **默认值：** 内置默认 User-Agent
 
@@ -263,7 +214,7 @@ USER_AGENT=Mozilla/5.0 ...
 
 ### MCP_HTTP_PORT
 
-启用 HTTP 模式并指定端口。
+启用 HTTP 模式并指定端口。HTTP 模式为**无状态**设计（无会话 ID，双协议兼容）。
 
 ```bash
 MCP_HTTP_PORT=3000
@@ -272,7 +223,7 @@ MCP_HTTP_PORT=3000
 **默认值：** 空（使用 STDIO 模式）
 
 启用后可访问：
-- MCP 端点: `http://localhost:3000/mcp`
+- MCP 端点: `http://localhost:3000/mcp`（同时支持 MCP 2026-07-28 与 2025 协议）
 - 健康检查: `http://localhost:3000/health`
 
 ### AUTH_USERNAME / AUTH_PASSWORD
@@ -330,16 +281,6 @@ URL_CACHE_SIZE=100
 
 **默认值：** `100`
 
-### EMBEDDING_CACHE_SIZE
-
-Embedding 缓存最大条目数。
-
-```bash
-EMBEDDING_CACHE_SIZE=1000
-```
-
-**默认值：** `1000`
-
 ---
 
 ## 代理配置（可选）
@@ -365,31 +306,30 @@ NO_PROXY=localhost,127.0.0.1
 
 ## 配置示例
 
-### 最小配置
+### 最小配置（本地推理）
 
 ```bash
 SEARXNG_URL=http://localhost:8080
+RERANK_BASE_URL=http://localhost:11434
 ```
 
-### 完整配置（混合检索 + HTTP 模式）
+### 完整配置（云端 rerank + HTTP 模式）
 
 ```bash
 # 必填
 SEARXNG_URL=http://localhost:8080
-
-# 混合检索
-EMBEDDING_BASE_URL=http://localhost:11434
-EMBEDDING_MODEL=nomic-embed-text
-EMBEDDING_TIMEOUT_MS=90000
+RERANK_BASE_URL=https://api.jina.ai/v1
+RERANK_API_KEY=jina_xxxxx
+RERANK_MODEL=jina-reranker-v2-base-multilingual
 TOP_K=5
 
-# HTTP 模式
+# HTTP 模式（无状态）
 MCP_HTTP_PORT=3000
 AUTH_USERNAME=admin
 AUTH_PASSWORD=your-secret-password
 
 # 搜索控制
-SEARCH_PAGES=3
+SEARCH_PAGES=1
 ```
 
 ### Docker Compose 配置
@@ -400,8 +340,7 @@ services:
     image: ghcr.io/sebrinass/agent-search:latest
     environment:
       - SEARXNG_URL=http://searxng:8080
-      - EMBEDDING_BASE_URL=http://host.docker.internal:11434
-      - EMBEDDING_TIMEOUT_MS=90000
+      - RERANK_BASE_URL=http://host.docker.internal:11434
       - MCP_HTTP_PORT=3000
 ```
 
@@ -409,12 +348,12 @@ services:
 
 ## 性能参考
 
-| 模式 | SEARCH_PAGES | EMBEDDING_TIMEOUT_MS | 相关性 |
-|------|--------------|---------------------|--------|
-| 纯文本 | 1 | - | ~50% |
-| 混合检索 | 1 | 90000 | ~80% |
+| 模式 | SEARCH_PAGES | 相关性 |
+|------|--------------|--------|
+| SearXNG 原始排序（rerank 失败降级） | 1 | ~50% |
+| Rerank 重排 | 1 | ~80% |
 
 **优化建议：**
 - 搜索关键词并发不超过 3 个
 - 在 SearXNG 配置中过滤视频网站以提升结果质量
-- 嵌入模型响应慢时，可适当增大 `EMBEDDING_TIMEOUT_MS`
+- rerank 超时失败会自动降级为原始排序，不会中断搜索

@@ -122,7 +122,7 @@ async function runTests() {
     assert.ok(Array.isArray(tools));
 
     const toolNames = tools.map(t => t.name);
-    assert.ok(toolNames.includes('read'), 'Should include read tool');
+    assert.ok(toolNames.includes('urls_read'), 'Should include urls_read tool');
   }, results);
 
   // ============ registerRequestHandlers ============

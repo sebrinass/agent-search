@@ -2,16 +2,15 @@ import { getCurrentLogLevel } from "./logging.js";
 import { packageVersion } from "./version.js";
 import {
   SEARXNG_URL,
-  EMBEDDING_API_KEY,
-  EMBEDDING_BASE_URL,
-  EMBEDDING_MODEL,
+  RERANK_BASE_URL,
+  RERANK_API_KEY,
+  RERANK_MODEL,
   TOP_K,
   AUTH_USERNAME,
   AUTH_PASSWORD,
   HTTP_PROXY,
   HTTPS_PROXY,
-  MCP_HTTP_PORT,
-  isEmbeddingEnabled
+  MCP_HTTP_PORT
 } from "./config.js";
 
 export function createConfigResource() {
@@ -23,20 +22,20 @@ export function createConfigResource() {
     },
     environment: {
       searxngUrl: SEARXNG_URL || "(not configured)",
-      embeddingApiKey: EMBEDDING_API_KEY ? "(configured)" : "(not configured)",
-      embeddingBaseUrl: EMBEDDING_BASE_URL || "(not configured)",
+      rerankBaseUrl: RERANK_BASE_URL || "(not configured)",
+      rerankModel: RERANK_MODEL,
       hasAuth: !!(AUTH_USERNAME && AUTH_PASSWORD),
       hasProxy: !!(HTTP_PROXY || HTTPS_PROXY),
       nodeVersion: process.version,
       currentLogLevel: getCurrentLogLevel()
     },
     capabilities: {
-      tools: ["search", "read"],
+      tools: ["web_search", "urls_read"],
       transports: MCP_HTTP_PORT ? ["stdio", "http"] : ["stdio"]
     },
-    embedding: {
-      enabled: isEmbeddingEnabled,
-      model: EMBEDDING_MODEL,
+    rerank: {
+      enabled: !!(RERANK_BASE_URL || RERANK_API_KEY),
+      model: RERANK_MODEL,
       topK: TOP_K
     }
   };
@@ -45,15 +44,15 @@ export function createConfigResource() {
 }
 
 export function createHelpResource() {
-  return `# Augmented Search MCP Server 帮助
+  return `# agent-search MCP Server 帮助
 
 ## 概述
-增强型 MCP 搜索服务器，集成混合检索等功能。
+增强型 MCP 搜索服务器：SearXNG 搜索 + cross-encoder rerank 重排 + URL 内容读取（含 PDF）。
 
 ## 可用工具
 
-### 1. search
-并发搜索工具，支持混合检索和链接去重。
+### 1. web_search
+通用网络搜索工具，并发搜索多个关键词，经 rerank 重排后返回最相关结果。
 
 **必填参数：**
 - \`searchedKeywords\`: 要搜索的关键词列表（最多3个并发）
@@ -65,8 +64,8 @@ export function createHelpResource() {
 - \`safeSearch\`: 安全搜索级别（0=关闭，1=中等，2=严格）
 - \`category\`: 搜索分类（general, news, science, it, images, videos, files, music）
 
-### 2. read
-读取 URL 内容，支持 JS 渲染降级和正文提取。
+### 2. urls_read
+读取 URL 内容（网页自动转 Markdown，PDF 自动本地解析），支持批量、分页、章节提取。
 
 **参数：**
 - \`urls\`: URL 数组（如 \`["https://a.com", "https://b.com"]\`），最少1个
@@ -80,13 +79,13 @@ export function createHelpResource() {
 
 ### 必填环境变量
 - \`SEARXNG_URL\`: SearXNG 实例地址
+- \`RERANK_BASE_URL\` 或 \`RERANK_API_KEY\`: rerank 服务地址（或 API 密钥）
 
 ### 可选环境变量
-- \`EMBEDDING_API_KEY\`: OpenAI 兼容 API 密钥
-- \`EMBEDDING_BASE_URL\`: API 端点地址（或用 OLLAMA_HOST）
-- \`EMBEDDING_MODEL\`: 嵌入模型（默认 nomic-embed-text）
+- \`RERANK_MODEL\`: rerank 模型（默认 jina-reranker-v2-base-multilingual）
+- \`RERANK_API_KEY\`: rerank API 密钥
 - \`MCP_HTTP_PORT\`: HTTP 模式端口
-- \`SEARCH_PAGES\`: 搜索页数（默认智能调整）
+- \`SEARCH_PAGES\`: 搜索页数（默认 1）
 - \`SEARCH_ENGINES\`: 搜索引擎（默认空=使用SearXNG默认配置）
   - 留空或 "all": 使用 SearXNG 默认全部引擎
   - "google,baidu,bing": 指定引擎列表
@@ -96,8 +95,8 @@ export function createHelpResource() {
 ### STDIO（默认）
 标准输入输出传输，适用于桌面客户端。
 
-### HTTP（可选）
-RESTful HTTP 传输，设置 \`MCP_HTTP_PORT\` 启用。
+### HTTP（推荐，容器部署）
+设置 \`MCP_HTTP_PORT\` 启用，无状态设计，适合 Docker 容器部署。
 
 ## 使用日志
 设置日志级别 "debug" 获取详细请求信息。

@@ -1,5 +1,5 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
+import { Server } from "@modelcontextprotocol/server";
 import { validateEnvironment as validateEnv } from "./error-handler.js";
 import { logMessage } from "./logging.js";
 import { createHttpServer } from "./http-server.js";

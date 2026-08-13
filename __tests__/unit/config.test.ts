@@ -8,14 +8,11 @@
 
 import { strict as assert } from 'node:assert';
 import {
-  EMBEDDING_MODEL,
-  EMBEDDING_TIMEOUT_MS,
   DEFAULT_SEARCH_PAGES,
   SEARCH_PAGES,
   SEARCH_LANGUAGE,
   SAFE_SEARCH,
   TOP_K,
-  RRF_K,
   MAX_KEYWORDS,
   MAX_DESCRIPTION_LENGTH,
   FETCH_TIMEOUT_MS,
@@ -23,10 +20,12 @@ import {
   LINK_DEDUP_TTL,
   URL_CACHE_TTL,
   URL_CACHE_SIZE,
-  EMBEDDING_CACHE_SIZE,
-  EMBEDDING_MODEL as EMBEDDING_MODEL_CHECK,
   SEARCH_TIMEOUT_MS,
   SEARCH_ENGINES,
+  RERANK_BASE_URL,
+  RERANK_MODEL,
+  RERANK_TIMEOUT_MS,
+  RERANK_MAX_TEXT_LENGTH,
 } from '../../src/config.js';
 import { validateEnvironment } from '../../src/error-handler.js';
 import { testFunction, createTestResults, printTestSummary } from '../helpers/test-utils.js';
@@ -40,16 +39,16 @@ async function runTests() {
 
   // ============ 默认值测试 ============
 
-  await testFunction('EMBEDDING_MODEL default value', () => {
-    assert.ok(typeof EMBEDDING_MODEL === 'string' && EMBEDDING_MODEL.length > 0);
+  await testFunction('RERANK_MODEL default value', () => {
+    assert.ok(typeof RERANK_MODEL === 'string' && RERANK_MODEL.length > 0);
   }, results);
 
-  await testFunction('EMBEDDING_TIMEOUT_MS default value', () => {
-    assert.ok(EMBEDDING_TIMEOUT_MS >= 90000, `EMBEDDING_TIMEOUT_MS should be >= 90000, got ${EMBEDDING_TIMEOUT_MS}`);
+  await testFunction('RERANK_TIMEOUT_MS default value', () => {
+    assert.ok(RERANK_TIMEOUT_MS > 0, `RERANK_TIMEOUT_MS should be > 0, got ${RERANK_TIMEOUT_MS}`);
   }, results);
 
-  await testFunction('RRF_K constant value', () => {
-    assert.equal(RRF_K, 60);
+  await testFunction('RERANK_MAX_TEXT_LENGTH default value', () => {
+    assert.ok(RERANK_MAX_TEXT_LENGTH > 0, `RERANK_MAX_TEXT_LENGTH should be > 0, got ${RERANK_MAX_TEXT_LENGTH}`);
   }, results);
 
   await testFunction('TOP_K default value', () => {
@@ -84,10 +83,6 @@ async function runTests() {
     assert.equal(URL_CACHE_SIZE, 100);
   }, results);
 
-  await testFunction('EMBEDDING_CACHE_SIZE default value', () => {
-    assert.equal(EMBEDDING_CACHE_SIZE, 1000);
-  }, results);
-
   await testFunction('SEARCH_LANGUAGE default value', () => {
     assert.equal(SEARCH_LANGUAGE, 'all');
   }, results);
@@ -105,10 +100,6 @@ async function runTests() {
   }, results);
 
   // ============ 衍生配置测试 ============
-
-  await testFunction('EMBEDDING_MODEL is consistent', () => {
-    assert.equal(EMBEDDING_MODEL_CHECK, EMBEDDING_MODEL);
-  }, results);
 
   await testFunction('SEARCH_TIMEOUT_MS is a positive number', () => {
     assert.ok(SEARCH_TIMEOUT_MS > 0, `SEARCH_TIMEOUT_MS should be > 0, got ${SEARCH_TIMEOUT_MS}`);
@@ -130,11 +121,35 @@ async function runTests() {
     envManager.restore();
   }, results);
 
-  await testFunction('validateEnvironment passes when SEARXNG_URL is set', () => {
+  await testFunction('validateEnvironment returns error when RERANK is missing', () => {
     envManager.set('SEARXNG_URL', 'https://test-searx.example.com');
+    envManager.delete('RERANK_BASE_URL');
+    envManager.delete('RERANK_API_KEY');
 
     const result = validateEnvironment();
-    assert.equal(result, null, `validateEnvironment should return null when SEARXNG_URL is valid, got: ${result}`);
+    assert.ok(result !== null, 'validateEnvironment should return an error when RERANK is missing');
+    assert.ok(result!.includes('RERANK_BASE_URL'), `Error message should mention RERANK_BASE_URL, got: ${result}`);
+
+    envManager.restore();
+  }, results);
+
+  await testFunction('validateEnvironment passes when SEARXNG_URL and RERANK are set', () => {
+    envManager.set('SEARXNG_URL', 'https://test-searx.example.com');
+    envManager.set('RERANK_BASE_URL', 'http://localhost:11434');
+
+    const result = validateEnvironment();
+    assert.equal(result, null, `validateEnvironment should return null when config is valid, got: ${result}`);
+
+    envManager.restore();
+  }, results);
+
+  await testFunction('validateEnvironment passes with RERANK_API_KEY only', () => {
+    envManager.set('SEARXNG_URL', 'https://test-searx.example.com');
+    envManager.delete('RERANK_BASE_URL');
+    envManager.set('RERANK_API_KEY', 'test-key');
+
+    const result = validateEnvironment();
+    assert.equal(result, null, `validateEnvironment should return null with RERANK_API_KEY, got: ${result}`);
 
     envManager.restore();
   }, results);
@@ -161,6 +176,7 @@ async function runTests() {
 
   await testFunction('validateEnvironment returns error when AUTH_USERNAME set but AUTH_PASSWORD missing', () => {
     envManager.set('SEARXNG_URL', 'https://test-searx.example.com');
+    envManager.set('RERANK_BASE_URL', 'http://localhost:11434');
     envManager.set('AUTH_USERNAME', 'testuser');
     envManager.delete('AUTH_PASSWORD');
 
@@ -173,6 +189,7 @@ async function runTests() {
 
   await testFunction('validateEnvironment returns error when AUTH_PASSWORD set but AUTH_USERNAME missing', () => {
     envManager.set('SEARXNG_URL', 'https://test-searx.example.com');
+    envManager.set('RERANK_BASE_URL', 'http://localhost:11434');
     envManager.delete('AUTH_USERNAME');
     envManager.set('AUTH_PASSWORD', 'testpass');
 

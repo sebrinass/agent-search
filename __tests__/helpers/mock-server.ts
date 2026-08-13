@@ -3,8 +3,7 @@
  * 
  * Creates mock MCP server objects for testing
  */
-
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { Server } from "@modelcontextprotocol/server";
 
 export interface MockServer {
   notification: (method: string, params: any) => Promise<void>;

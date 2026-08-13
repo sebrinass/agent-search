@@ -1,13 +1,13 @@
 import { Command } from "commander";
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { Server } from "@modelcontextprotocol/server";
 import { fetchAndConvertToMarkdown, PaginationOptions } from "../url-reader.js";
 import { packageVersion } from "../version.js";
 import { FETCH_TIMEOUT_MS } from "../config.js";
 
 export function registerReadCommand(program: Command) {
   program
-    .command("read <urls...>")
-    .description("读取 URL 内容（支持多 URL）")
+    .command("urls-read <urls...>")
+    .description("读取 URL 内容（网页/Markdown，支持多 URL 与 PDF）")
     .option("--start-char <number>", "起始字符位置", "0")
     .option("--max-length <number>", "最大返回字符数")
     .option("--section <heading>", "提取指定章节")

@@ -1,14 +1,10 @@
 /**
- * 重排路由模块 - 三选一自动路由
+ * 重排模块 - cross-encoder rerank
  *
- * 优先级：
- * 1. 配置了 RERANK_BASE_URL/RERANK_API_KEY → 纯 cross-encoder rerank
- * 2. 配置了 EMBEDDING_*                  → 复用 embedding.ts 的 BM25+语义 RRF 融合
- * 3. 都没配                              → 信任 SearXNG 原始排序，取前 TOP_K
+ * 唯一策略：调用 RERANK_BASE_URL 的 /rerank 端点对候选做相关性重排。
+ * API 失败时降级为 SearXNG 原始排序，保证搜索不中断。
  *
- * 任何一档失败均自动降级：返回 SearXNG 原始排序的前 TOP_K，保证搜索不中断。
- *
- * Rerank API 协议：Jina/Cohere/SiliconFlow/Together 通用 /rerank 端点
+ * Rerank API 协议：Jina/Cohere/SiliconFlow/Together/本地推理服务 通用 /rerank 端点
  *   请求：{ model, query, documents: string[], top_n }
  *   响应：{ results: [{ index, relevance_score }] }
  */
@@ -20,15 +16,25 @@ import {
   RERANK_TIMEOUT_MS,
   RERANK_MAX_TEXT_LENGTH,
   isRerankEnabled,
-  isEmbeddingEnabled,
   TOP_K,
 } from './config.js';
 import { logMessage } from './logging.js';
 import { rerankCache } from './cache.js';
-import { rerankWithHybridSearch, type SearchResult, type ScoredResult } from './embedding.js';
 
-// 复用 embedding.ts 的类型，保持 research.ts 调用处类型不变
-export type { SearchResult, ScoredResult };
+// ============ 类型定义 ============
+export interface SearchResult {
+  title: string;
+  content: string;
+  url: string;
+  score: number;
+  publishedDate?: string;
+}
+
+export interface ScoredResult extends SearchResult {
+  rrfScore: number;
+  bm25Rank: number;
+  semanticRank: number;
+}
 
 // ============ SearXNG 原始排序降级 ============
 function fallbackToOriginal(results: SearchResult[]): ScoredResult[] {
@@ -71,15 +77,12 @@ async function callRerankApi(query: string, documents: string[], topN: number): 
     headers['Authorization'] = `Bearer ${RERANK_API_KEY}`;
   }
 
-  const MAX_429_RETRIES = 3;
-
   try {
-    let response!: Response;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), RERANK_TIMEOUT_MS);
 
-    for (let attempt = 0; attempt <= MAX_429_RETRIES; attempt++) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), RERANK_TIMEOUT_MS);
-
+    let response: Response;
+    try {
       response = await fetch(endpoint, {
         method: 'POST',
         headers,
@@ -91,18 +94,8 @@ async function callRerankApi(query: string, documents: string[], topN: number): 
         }),
         signal: controller.signal,
       });
-
+    } finally {
       clearTimeout(timeoutId);
-
-      // 429 限流：指数退避重试
-      if (response.status === 429 && attempt < MAX_429_RETRIES) {
-        const waitMs = 1000 * Math.pow(2, attempt);
-        logMessage(null, 'info', `Rerank API 限流(429)，第${attempt + 1}次重试，等待${waitMs}ms...`);
-        await new Promise(resolve => setTimeout(resolve, waitMs));
-        continue;
-      }
-
-      break;
     }
 
     if (!response.ok) {
@@ -129,7 +122,7 @@ async function callRerankApi(query: string, documents: string[], topN: number): 
  * 发超长正文会被模型内部截断，纯属浪费。故：
  * - title 完整保留（对相关性判断权重最大）
  * - content 截前 RERANK_MAX_TEXT_LENGTH 字符
- * - 总长封顶 RERANK_MAX_TEXT_LENGTH，与 embedding 双塔口径对齐
+ * - 总长封顶 RERANK_MAX_TEXT_LENGTH
  */
 function buildRerankDocument(result: SearchResult): string {
   const title = result.title ?? '';
@@ -138,10 +131,10 @@ function buildRerankDocument(result: SearchResult): string {
 }
 
 async function rerankWithCrossEncoder(query: string, results: SearchResult[]): Promise<ScoredResult[]> {
-  // 拼装文档文本：title 完整 + content 截断，与 embedding 双塔保持一致口径
+  // 拼装文档文本：title 完整 + content 截断
   const documents = results.map(buildRerankDocument);
 
-  // 缓存命中：同一 query + 同一批 URL 直接返回，避免重复烧模型
+  // 缓存命中：同一 query + 同一批 URL 直接返回，避免重复推理
   const docUrls = results.map(r => r.url);
   const cached = rerankCache.get(query, docUrls);
   if (cached) {
@@ -195,29 +188,26 @@ async function rerankWithCrossEncoder(query: string, results: SearchResult[]): P
   return scored.slice(0, TOP_K);
 }
 
-// ============ 主入口：三选一自动路由 ============
+// ============ 主入口 ============
 /**
- * 重排结果 - 根据配置自动选择策略
+ * 重排结果 - cross-encoder rerank
  *
- * 优先级：
- * 1. rerank 启用 → 纯 cross-encoder rerank
- * 2. embedding 启用 → BM25 + 语义 RRF 融合（复用 embedding.ts）
- * 3. 都没配 → SearXNG 原始排序
- *
- * 任何失败均降级为 SearXNG 原始排序，不中断搜索。
+ * - rerank 启用 → 纯 cross-encoder rerank
+ * - 未配置 rerank（仅 CLI 场景允许）→ SearXNG 原始排序（MCP 模式启动时已强制要求配置）
+ * - API 调用失败 → 降级为 SearXNG 原始排序，不中断搜索
  */
 export async function rerankResults(query: string, results: SearchResult[]): Promise<ScoredResult[]> {
-  // 短路：候选数不足，直接透传
-  if (results.length <= TOP_K) {
-    return passThrough(results);
-  }
-
   // 空结果
   if (results.length === 0) {
     return [];
   }
 
-  // 1) rerank 模式
+  // 短路：候选数不足，直接透传
+  if (results.length <= TOP_K) {
+    return passThrough(results);
+  }
+
+  // rerank 模式
   if (isRerankEnabled) {
     try {
       return await rerankWithCrossEncoder(query, results);
@@ -227,11 +217,6 @@ export async function rerankResults(query: string, results: SearchResult[]): Pro
     }
   }
 
-  // 2) embedding 混合模式（复用 embedding.ts，逻辑完全不变）
-  if (isEmbeddingEnabled) {
-    return await rerankWithHybridSearch(query, results);
-  }
-
-  // 3) 无模型：信任 SearXNG 原始排序
+  // 未配置 rerank：信任 SearXNG 原始排序（仅 CLI 宽松场景）
   return fallbackToOriginal(results);
 }

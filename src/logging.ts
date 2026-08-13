@@ -1,5 +1,4 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { LoggingLevel } from "@modelcontextprotocol/sdk/types.js";
+import { Server, LoggingLevel } from "@modelcontextprotocol/server";
 
 // Logging state — 启动时从 LOG_LEVEL 环境变量读取（兼容 CLI / stdio / HTTP 启动路径），
 // 未设置或值不合法时回退为 info。

@@ -6,9 +6,7 @@
  * 2. 集成混合检索（RRF 融合 BM25 + 语义嵌入）
  * 3. 集成链接去重
  */
-
-import { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { Tool, Server } from "@modelcontextprotocol/server";
 import { logMessage } from "./logging.js";
 import { fetchSinglePage } from "./search.js";
 import { rerankResults, type SearchResult } from "./rerank.js";
@@ -275,11 +273,11 @@ export class ResearchServer {
 // ============ 工具定义 ============
 
 /**
- * Search 工具定义
+ * web_search 工具定义
  */
 export const SEARCH_TOOL: Tool = {
-  name: "search",
-  description: `搜索互联网获取信息。自动根据是否配置嵌入模型选择搜索策略：配置了嵌入模型时使用语义增强搜索（多页+混合检索），未配置时使用快速搜索（单页+关键词匹配）。支持按分类限定搜索范围`,
+  name: "web_search",
+  description: `通用网络搜索工具。并发搜索多个关键词，经 cross-encoder rerank 重排后返回最相关结果。支持按分类、时间、语言限定搜索范围`,
   inputSchema: {
     type: "object",
     properties: {

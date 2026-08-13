@@ -183,38 +183,30 @@ python3 -c "import secrets; print(secrets.token_hex(32))"
 
 ---
 
-## 混合检索配置（可选）
+## Rerank 配置（必填）
 
-启用基于 Embedding 的重排序，提升搜索相关性。
+启用 cross-encoder rerank 重排，提升搜索相关性（约 80%）。
 
-### 使用 Ollama（本地）
+### 使用 Ollama（本地，推荐）
 
 ```bash
 # 安装 Ollama
 curl -fsSL https://ollama.com/install.sh | sh
 
-# 拉取嵌入模型
-ollama pull nomic-embed-text
+# 拉取 rerank 模型（以 jina-reranker 为例，按你的 Ollama 可用模型调整）
+ollama pull jina-reranker-v2-base-multilingual
 
-# 配置
-export EMBEDDING_BASE_URL="http://localhost:11434"
-export EMBEDDING_MODEL="nomic-embed-text"
+# 配置（Ollama 的 /v1 兼容端点）
+export RERANK_BASE_URL="http://localhost:11434"
+export RERANK_MODEL="jina-reranker-v2-base-multilingual"
 ```
 
-### 使用 OpenAI（云端）
+### 使用 Jina / Cohere / SiliconFlow（云端）
 
 ```bash
-export EMBEDDING_API_KEY="sk-..."
-export EMBEDDING_BASE_URL="https://api.openai.com/v1"
-export EMBEDDING_MODEL="text-embedding-3-small"
-```
-
-### 使用 Jina（云端）
-
-```bash
-export EMBEDDING_API_KEY="jina_..."
-export EMBEDDING_BASE_URL="https://api.jina.ai/v1"
-export EMBEDDING_MODEL="jina-embeddings-v2-base-en"
+export RERANK_BASE_URL="https://api.jina.ai/v1"
+export RERANK_API_KEY="jina_..."
+export RERANK_MODEL="jina-reranker-v2-base-multilingual"
 ```
 
 ---

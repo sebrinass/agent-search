@@ -9,7 +9,6 @@
 import { strict as assert } from 'node:assert';
 import {
   urlContentCache,
-  embeddingCache,
   linkDedupPool,
   addLinksToDedup,
   isLinkDuplicate
@@ -23,19 +22,12 @@ const getUrlCache = (url: string) => urlContentCache.get(url);
 const hasUrlCache = (url: string) => urlContentCache.has(url);
 const deleteUrlCache = (url: string) => urlContentCache.delete(url);
 const getUrlCacheStats = () => urlContentCache.getStats();
-const clearEmbeddingCache = () => embeddingCache.clear();
-const setEmbeddingCache = (text: string, emb: Float32Array | number[]) => embeddingCache.set(text, emb);
-const getEmbeddingCache = (text: string) => embeddingCache.get(text);
-const hasEmbeddingCache = (text: string) => embeddingCache.has(text);
-const getEmbeddingCacheStats = () => embeddingCache.getStats();
 const clearLinkDedup = () => linkDedupPool.clear();
 const getLinkDedupStats = () => linkDedupPool.getStats();
 const clearAllCaches = () => {
   urlContentCache.clear();
-  embeddingCache.clear();
   linkDedupPool.clear();
 };
-void getEmbeddingCacheStats;
 
 const results = createTestResults();
 
@@ -110,43 +102,14 @@ async function runTests() {
     clearLinkDedup();
   }, results);
 
-  await testFunction('Embedding cache - set and get', () => {
-    clearEmbeddingCache();
-
-    const testEmbedding = new Float32Array([0.1, 0.2, 0.3]);
-    setEmbeddingCache('test text', testEmbedding);
-    
-    const cached = getEmbeddingCache('test text');
-    assert.ok(cached);
-    assert.equal(cached.length, testEmbedding.length);
-    for (let i = 0; i < cached.length; i++) {
-      assert.ok(Math.abs(cached[i] - testEmbedding[i]) < 1e-7,
-        `Value at index ${i}: expected ${testEmbedding[i]}, got ${cached[i]}`);
-    }
-
-    clearEmbeddingCache();
-  }, results);
-
-  await testFunction('Embedding cache - has and check', () => {
-    clearEmbeddingCache();
-
-    assert.equal(hasEmbeddingCache('test'), false);
-    setEmbeddingCache('test', new Float32Array([1, 2, 3]));
-    assert.equal(hasEmbeddingCache('test'), true);
-
-    clearEmbeddingCache();
-  }, results);
-
   await testFunction('Clear all caches', () => {
     setUrlCache('https://test.com', '<html>test</html>', '# Test');
     addLinksToDedup(['https://link.com']);
-    setEmbeddingCache('test', new Float32Array([1, 2, 3]));
 
     clearAllCaches();
 
     assert.equal(hasUrlCache('https://test.com'), false);
     assert.equal(isLinkDuplicate('https://link.com'), false);
-    assert.equal(hasEmbeddingCache('test'), false);
   }, results);
 
   printTestSummary(results, 'Cache Module');

@@ -1,13 +1,13 @@
 ---
 name: "performing-searches"
-description: "Provides concurrent web search capabilities for Agents with hybrid retrieval. Supports searching multiple keywords simultaneously, Embedding re-ranking to improve relevance to ~80%. Use when users need to search the web, look up information, or mention SearXNG, MCP search, or local search."
-version: "0.2.0"
+description: "Provides concurrent web search capabilities for Agents with cross-encoder rerank re-ranking. Supports searching multiple keywords simultaneously, rerank to improve relevance to ~80%. Use when users need to search the web, look up information, or mention SearXNG, MCP search, or local search."
+version: "0.3.0"
 author: "sebrinass"
 tags: ["search", "mcp", "searxng", "agent", "local"]
 category: "search"
 tools:
-  - name: search
-    description: "并发搜索工具，支持多关键词并发搜索、站点/时间/语言/分类过滤，自动根据嵌入模型配置选择搜索策略"
+  - name: web_search
+    description: "通用网络搜索工具，并发搜索多个关键词，经 cross-encoder rerank 重排后返回最相关结果"
     inputSchema:
       type: "object"
       properties:
@@ -37,8 +37,8 @@ tools:
           enum: ["day", "month", "year"]
           description: "时间范围过滤：day=最近一天，month=最近一月，year=最近一年"
       required: ["searchedKeywords"]
-  - name: read
-    description: "读取 URL 内容，支持 JS 渲染降级和正文提取"
+  - name: urls_read
+    description: "读取 URL 内容（网页自动转 Markdown，PDF 自动本地解析），支持批量、分页、章节提取"
     inputSchema:
       type: "object"
       properties:
@@ -71,25 +71,28 @@ env:
     - name: "SEARXNG_URL"
       description: "SearXNG 实例地址"
       example: "http://localhost:8080"
+    - name: "RERANK_BASE_URL"
+      description: "rerank 服务地址（或 RERANK_API_KEY 二选一）"
+      example: "http://localhost:11434"
   optional:
-    - name: "EMBEDDING_BASE_URL"
-      description: "Embedding API 端点（OpenAI 兼容，配置后启用语义增强搜索）"
+    - name: "RERANK_API_KEY"
+      description: "云端 rerank API 密钥（与 RERANK_BASE_URL 二选一）"
     - name: "MCP_HTTP_PORT"
       description: "HTTP 模式端口（未设置时不启用 HTTP 模式）"
     - name: "SEARCH_TIMEOUT_MS"
       description: "搜索超时（毫秒）"
-      default: "EMBEDDING_TIMEOUT + 10s"
+      default: "60000"
 source: "https://github.com/sebrinass/agent-search"
 homepage: "https://github.com/sebrinass/agent-search"
 ---
 
 # Agent Search
 
-为 Agent 提供高效的本地联网搜索能力，支持混合检索和链接去重。
+为 Agent 提供高效的本地联网搜索能力，支持 rerank 重排和链接去重。
 
 ## 快速开始
 
-**前置条件**: SearXNG 实例（必需）
+**前置条件**: SearXNG 实例 + rerank 服务（必需）
 
 **Docker 方式（推荐）**:
 
@@ -97,6 +100,8 @@ homepage: "https://github.com/sebrinass/agent-search"
 docker run -d --name searxng -p 8080:8080 searxng/searxng:latest
 docker run -d --name agent-search -p 3000:3000 \
   -e SEARXNG_URL=http://host.docker.internal:8080 \
+  -e RERANK_BASE_URL=http://host.docker.internal:11434 \
+  -e MCP_HTTP_PORT=3000 \
   ghcr.io/sebrinass/agent-search:latest
 ```
 
@@ -104,17 +109,15 @@ docker run -d --name agent-search -p 3000:3000 \
 
 ```bash
 npm install -g agent-local-search
-SEARXNG_URL=http://localhost:8080 agent-search
+SEARXNG_URL=http://localhost:8080 RERANK_BASE_URL=http://localhost:11434 agent-search
 ```
 
 ## 工具概览
 
-### search — 并发搜索
+### web_search — 通用网络搜索
 
-支持混合检索，一次请求最多搜索 3 个关键词。自动根据是否配置嵌入模型选择搜索策略：
-
-- **配置了 `EMBEDDING_BASE_URL`** → 语义增强搜索（单页+BM25+语义RRF），相关性约 80%
-- **未配置** → 快速搜索（单页，信任 SearXNG 原始排序），相关性约 50%
+并发搜索多个关键词，经 cross-encoder **rerank 重排**后返回最相关结果（相关性约 80%）。
+rerank 服务不可用时自动降级为 SearXNG 原始排序（约 50%），搜索不中断。
 
 **必填参数：**
 - `searchedKeywords` — **必须提供 2-3 个不同角度的关键词**以获得最佳效果（最多 3 个并发）
@@ -126,9 +129,9 @@ SEARXNG_URL=http://localhost:8080 agent-search
 - `safeSearch` — 安全搜索级别（0=关闭，1=中等，2=严格）
 - `time_range` — 时间范围（day, month, year）
 
-### read — URL 内容提取
+### urls_read — URL 内容读取
 
-读取网页内容，支持 JS 渲染降级和正文提取。
+读取网页内容（自动转 Markdown）或 PDF（本地解析），支持批量、分页、章节提取。
 
 **必填参数：**
 - `urls` — URL 数组（支持批量读取）
@@ -159,28 +162,28 @@ SEARXNG_URL=http://localhost:8080 agent-search
 
 ## CLI 使用
 
-安装后通过 `agent-search` 命令使用，支持 `.env` 文件配置环境变量。
+安装后通过 `agent-search` 命令使用（CLI 命令名与 MCP 工具名对齐），支持 `.env` 文件配置环境变量。
 
-### search — 网络搜索
+### web-search — 网络搜索
 
 ```bash
 # 基本搜索
-agent-search search -q "RAG 技术"
+agent-search web-search -q "RAG 技术"
 
 # 多关键词并发搜索（优先推荐）
-agent-search search -q "RAG" "向量数据库" "Embedding"
+agent-search web-search -q "RAG" "向量数据库" "Embedding"
 
 # 限制域名和时间范围
-agent-search search -q "React 19" --site github.com --time-range month
+agent-search web-search -q "React 19" --site github.com --time-range month
 
 # 指定分类和语言
-agent-search search -q "TypeScript" --category it --lang en
+agent-search web-search -q "TypeScript" --category it --lang en
 
 # JSON 格式输出
-agent-search search -q "RAG 技术" --json
+agent-search web-search -q "RAG 技术" --json
 
 # 详细输出
-agent-search -v search -q "RAG 技术"
+agent-search -v web-search -q "RAG 技术"
 ```
 
 **选项：**
@@ -195,26 +198,29 @@ agent-search -v search -q "RAG 技术"
 | `--safe-search <level>` | 安全搜索级别: 0, 1, 2（默认 0） |
 | `--json` | 以 JSON 格式输出结果 |
 
-### read — URL 内容读取
+### urls-read — URL 内容读取
 
 ```bash
 # 读取单个 URL
-agent-search read https://example.com
+agent-search urls-read https://example.com
 
 # 读取多个 URL
-agent-search read https://example.com https://example.org
+agent-search urls-read https://example.com https://example.org
+
+# 读取 PDF（自动本地解析）
+agent-search urls-read https://example.com/paper.pdf
 
 # 分页读取
-agent-search read https://example.com --start-char 1000 --max-length 5000
+agent-search urls-read https://example.com --start-char 1000 --max-length 5000
 
 # 提取指定章节
-agent-search read https://example.com --section "Installation"
+agent-search urls-read https://example.com --section "Installation"
 
 # 段落范围
-agent-search read https://example.com --paragraph-range 1-5
+agent-search urls-read https://example.com --paragraph-range 1-5
 
 # 仅返回标题列表
-agent-search read https://example.com --headings
+agent-search urls-read https://example.com --headings
 ```
 
 ### 全局选项
@@ -230,14 +236,17 @@ agent-search read https://example.com --headings
 | 变量 | 说明 |
 |------|------|
 | `SEARXNG_URL` | SearXNG 实例地址 |
+| `RERANK_BASE_URL` 或 `RERANK_API_KEY` | rerank 服务地址/密钥（二选一） |
 
 ### 常用可选
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `EMBEDDING_BASE_URL` | - | Embedding API 端点（配置后自动启用语义增强搜索） |
-| `MCP_HTTP_PORT` | - | HTTP 模式端口（未设置时不启用） |
-| `SEARCH_TIMEOUT_MS` | EMBEDDING_TIMEOUT + 10s | 搜索超时（毫秒） |
+| `RERANK_MODEL` | jina-reranker-v2-base-multilingual | rerank 模型名 |
+| `RERANK_API_KEY` | - | 云端 rerank API 密钥 |
+| `RERANK_TIMEOUT_MS` | 30000 | rerank 调用超时，失败自动降级原始排序 |
+| `MCP_HTTP_PORT` | - | HTTP 模式端口（无状态，未设置时不启用） |
+| `SEARCH_TIMEOUT_MS` | 60000 | 搜索超时（毫秒） |
 
 完整配置请参阅 [GitHub 配置参考](https://github.com/sebrinass/agent-search/blob/main/docs/configuration.md)。
 

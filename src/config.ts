@@ -13,18 +13,9 @@ import path from "node:path";
 const __filename = fileURLToPath(import.meta.url);
 const PROJECT_ROOT = path.resolve(path.dirname(__filename), "..");
 
-// ============ 嵌入相关配置 ============
-export const EMBEDDING_API_KEY = process.env.EMBEDDING_API_KEY || '';
-export const EMBEDDING_BASE_URL = process.env.EMBEDDING_BASE_URL || process.env.OLLAMA_HOST || '';
-export const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || 'nomic-embed-text';
-export const isEmbeddingEnabled = !!(EMBEDDING_API_KEY || EMBEDDING_BASE_URL);
-
-// ============ 嵌入超时配置 ============
-export const EMBEDDING_TIMEOUT_MS = parseInt(process.env.EMBEDDING_TIMEOUT_MS || '90000', 10);
-
 // ============ Rerank 相关配置 ============
-// 与 embedding 二选一：配置了 rerank 则优先走纯 cross-encoder 重排，忽略 embedding 设置。
-// 协议兼容 Jina/Cohere/SiliconFlow/Together 的 /rerank 端点。
+// 唯一的重排方式：cross-encoder rerank，协议兼容 Jina/Cohere/SiliconFlow/Together/本地推理服务的 /rerank 端点。
+// MCP 服务模式（mcp-main.ts）要求至少配置 RERANK_BASE_URL 或 RERANK_API_KEY 才能启动。
 export const RERANK_BASE_URL = process.env.RERANK_BASE_URL || '';
 export const RERANK_API_KEY = process.env.RERANK_API_KEY || '';
 export const RERANK_MODEL = process.env.RERANK_MODEL || 'jina-reranker-v2-base-multilingual';
@@ -35,18 +26,17 @@ export const isRerankEnabled = !!(RERANK_BASE_URL || RERANK_API_KEY);
 
 // ============ 搜索相关配置 ============
 // 默认每个关键词只抓 1 页：SearXNG 首页即为其认定最相关的约 10 条，
-// 抓更多页多为长尾、还会成倍增加本地 embedding 的计算量（iGPU 低功耗环境敏感）。
+// 抓更多页多为长尾、还会成倍增加 rerank 的计算量。
 // 需要更大候选池时可用环境变量 SEARCH_PAGES 覆盖。
 export const DEFAULT_SEARCH_PAGES = 1;
 export const SEARCH_PAGES = parseInt(process.env.SEARCH_PAGES || String(DEFAULT_SEARCH_PAGES), 10);
 export const SEARCH_ENGINES = process.env.SEARCH_ENGINES || '';
-export const SEARCH_TIMEOUT_MS = parseInt(process.env.SEARCH_TIMEOUT_MS || String(EMBEDDING_TIMEOUT_MS + 10000), 10);
+export const SEARCH_TIMEOUT_MS = parseInt(process.env.SEARCH_TIMEOUT_MS || '60000', 10);
 export const SEARCH_LANGUAGE = process.env.SEARCH_LANGUAGE || 'all';
 export const SAFE_SEARCH = parseInt(process.env.SAFE_SEARCH || '0', 10);
 
-// ============ RRF 相关配置 ============
+// ============ Rerank 结果数量 ============
 export const TOP_K = parseInt(process.env.TOP_K || '5', 10);
-export const RRF_K = 60;
 
 // ============ Research 相关配置 ============
 export const MAX_KEYWORDS = parseInt(process.env.MAX_KEYWORDS || '3', 10);
@@ -60,7 +50,6 @@ export const ENABLE_READABILITY = process.env.ENABLE_READABILITY !== 'false';
 export const LINK_DEDUP_TTL = parseInt(process.env.LINK_DEDUP_TTL || '86400', 10);
 export const URL_CACHE_TTL = parseInt(process.env.URL_CACHE_TTL || '3600', 10);
 export const URL_CACHE_SIZE = parseInt(process.env.URL_CACHE_SIZE || '100', 10);
-export const EMBEDDING_CACHE_SIZE = parseInt(process.env.EMBEDDING_CACHE_SIZE || '1000', 10);
 
 // ============ HTTP 服务相关配置 ============
 export const MCP_HTTP_PORT = process.env.MCP_HTTP_PORT;

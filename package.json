@@ -1,6 +1,6 @@
 {
   "name": "agent-local-search",
-  "version": "0.2.12",
+  "version": "0.3.0",
   "description": "为 Agent 提供的本地联网搜索工具，支持 CLI 和 MCP 模式",
   "license": "MIT",
   "author": "sebrinass",
@@ -38,13 +38,14 @@
   "scripts": {
     "build": "tsc && shx chmod +x dist/*.js dist/**/*.js",
     "watch": "tsc --watch",
-    "test": "cross-env SEARXNG_URL=https://test-searx.example.com tsx --no-cache __tests__/run-all.ts",
-    "test:coverage": "cross-env SEARXNG_URL=https://test-searx.example.com tsx --no-cache __tests__/run-all.ts",
+    "test": "cross-env SEARXNG_URL=https://test-searx.example.com RERANK_BASE_URL=http://localhost:11434 tsx --no-cache __tests__/run-all.ts",
+    "test:coverage": "cross-env SEARXNG_URL=https://test-searx.example.com RERANK_BASE_URL=http://localhost:11434 tsx --no-cache __tests__/run-all.ts",
     "bootstrap": "npm install && npm run build",
     "inspector": "cross-env DANGEROUSLY_OMIT_AUTH=true npx @modelcontextprotocol/inspector node dist/index.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/node": "^2.0.0",
+    "@modelcontextprotocol/server": "^2.0.0",
     "@mozilla/readability": "^0.6.0",
     "commander": "^14.0.3",
     "cors": "^2.8.6",
@@ -52,10 +53,10 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "happy-dom": "^20.9.0",
-    "minisearch": "^7.2.0",
     "node-html-markdown": "^2.0.0",
     "quick-lru": "^7.3.0",
-    "undici": "7.28.0"
+    "undici": "7.29.0",
+    "unpdf": "^1.8.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

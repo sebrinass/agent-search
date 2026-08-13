@@ -1,13 +1,13 @@
 import { Command } from "commander";
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { Server } from "@modelcontextprotocol/server";
 import { ResearchServer, SearchInput } from "../research.js";
 import { packageVersion } from "../version.js";
 import { SEARXNG_URL } from "../config.js";
 
 export function registerSearchCommand(program: Command) {
   program
-    .command("search")
-    .description("通用网络搜索工具")
+    .command("web-search")
+    .description("通用网络搜索工具（经 rerank 重排）")
     .requiredOption("-q, --query <keywords...>", "搜索关键词（最多3个）")
     .option("-s, --site <domain>", "限制搜索域名")
     .option("--time-range <range>", "时间范围: day, month, year")
@@ -18,7 +18,7 @@ export function registerSearchCommand(program: Command) {
     .action(async (opts) => {
       if (!SEARXNG_URL) {
         console.error("❌ 缺少 SEARXNG_URL 环境变量");
-        console.error("请设置 SearXNG 实例地址，例如: SEARXNG_URL=http://localhost:8080 agent-search search -q \"关键词\"");
+        console.error("请设置 SearXNG 实例地址，例如: SEARXNG_URL=http://localhost:8080 agent-search web-search -q \"关键词\"");
         process.exit(1);
       }
 

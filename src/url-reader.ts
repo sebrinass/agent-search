@@ -1,4 +1,4 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { Server } from "@modelcontextprotocol/server";
 import { NodeHtmlMarkdown } from "node-html-markdown";
 import { createProxyAgent } from "./proxy.js";
 import { logMessage } from "./logging.js";
@@ -9,6 +9,7 @@ import {
   createUrlSecurityPolicyDnsError,
 } from "./url-security.js";
 import {
+  MCPSearXNGError,
   createURLFormatError,
   createURLSecurityPolicyError,
   createNetworkError,
@@ -63,6 +64,8 @@ export interface PaginationOptions {
 
 interface FetchResult {
   htmlContent: string;
+  bytes?: Uint8Array;
+  contentType?: string;
   source: 'fetch';
 }
 
@@ -135,7 +138,7 @@ function installHappyDomErrorHandler() {
 
 // ============ 5MB 内容上限相关辅助函数 ============
 type BoundedBodyReadResult =
-  | { exceeded: false; text: string; bytesRead: number }
+  | { exceeded: false; bytes: Uint8Array; text: string; bytesRead: number }
   | { exceeded: true; bytesRead: number };
 
 /**
@@ -172,11 +175,12 @@ function createContentTooLargeMessage(contentLength: number, maxBytes: number): 
 
 /**
  * 用流式读取器逐块读取 response body，超出 maxBytes 立即取消。
+ * 同时保留原始字节（PDF 等二进制内容需要）与解码文本。
  * 这样可防止 chunked 编码或缺失 Content-Length 时把整个 body 读进内存（DoS 防护）。
  */
 async function readResponseBodyWithLimit(response: Response, maxBytes: number): Promise<BoundedBodyReadResult> {
   if (response.body === null) {
-    return { exceeded: false, text: "", bytesRead: 0 };
+    return { exceeded: false, bytes: new Uint8Array(0), text: "", bytesRead: 0 };
   }
 
   const reader = response.body.getReader();
@@ -213,7 +217,7 @@ async function readResponseBodyWithLimit(response: Response, maxBytes: number): 
     offset += chunk.byteLength;
   }
 
-  return { exceeded: false, text: new TextDecoder("utf-8").decode(bodyBytes), bytesRead };
+  return { exceeded: false, bytes: bodyBytes, text: new TextDecoder("utf-8").decode(bodyBytes), bytesRead };
 }
 
 /**
@@ -422,6 +426,62 @@ async function extractWithReadability(htmlContent: string, url: string): Promise
   }
 }
 
+// ============ PDF 解析（unpdf 懒加载） ============
+let unpdfModule: typeof import('unpdf') | null = null;
+
+async function getUnpdf() {
+  if (!unpdfModule) {
+    try {
+      unpdfModule = await import('unpdf');
+    } catch (e) {
+      logMessage(null, 'warning', 'unpdf not installed. PDF parsing disabled.');
+      return null;
+    }
+  }
+  return unpdfModule;
+}
+
+function isPdfContent(contentType: string | undefined, url: string): boolean {
+  if (contentType && contentType.toLowerCase().includes('application/pdf')) {
+    return true;
+  }
+  // 无 content-type 头时，用 URL 后缀兜底（.pdf）
+  try {
+    const pathname = new URL(url).pathname.toLowerCase();
+    return pathname.endsWith('.pdf');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 本地解析 PDF 文本（unpdf / pdfjs WASM，不向第三方上传）。
+ * 返回分页标注的纯文本，供后续统一应用分页/章节选项。
+ */
+async function extractPdfText(bytes: Uint8Array, url: string): Promise<string> {
+  const unpdf = await getUnpdf();
+  if (!unpdf) {
+    throw createContentError("PDF 解析库 (unpdf) 不可用", url);
+  }
+
+  try {
+    const { text } = await unpdf.extractText(bytes);
+    if (!text || text.length === 0 || text.every(page => !page.trim())) {
+      throw createContentError("PDF 未提取到文本（可能是扫描件/图片型 PDF）", url);
+    }
+
+    if (text.length === 1) {
+      return text[0];
+    }
+    return text.map((page, i) => `[第 ${i + 1}/${text.length} 页]\n${page}`).join('\n\n');
+  } catch (error: any) {
+    if (error instanceof MCPSearXNGError) {
+      throw error;
+    }
+    throw createContentError(`PDF 解析失败: ${error.message || String(error)}`, url);
+  }
+}
+
 // ============ 核心 Fetch 逻辑 ============
 async function fetchHtmlContent(
   server: Server,
@@ -524,6 +584,8 @@ async function fetchHtmlContent(
 
       return {
         htmlContent,
+        bytes: response.dataRaw ? new Uint8Array(response.dataRaw) : undefined,
+        contentType: (response.headers as any)?.['content-type'],
         source: 'fetch'
       };
     } catch (error: any) {
@@ -587,12 +649,14 @@ async function fetchHtmlContent(
 
     // Retrieve HTML content (with bounded stream to prevent OOM)
     let htmlContent: string;
+    let bodyBytes: Uint8Array | undefined;
     try {
       const bodyRead = await readResponseBodyWithLimit(response, maxContentLengthBytes);
       if (bodyRead.exceeded) {
         throw new Error(createContentTooLargeMessage(bodyRead.bytesRead, maxContentLengthBytes));
       }
       htmlContent = bodyRead.text;
+      bodyBytes = bodyRead.bytes;
     } catch (error: any) {
       if (error.message && error.message.startsWith("Content too large:")) {
         throw error;
@@ -609,6 +673,8 @@ async function fetchHtmlContent(
 
     return {
       htmlContent,
+      bytes: bodyBytes,
+      contentType: response.headers.get('content-type') || undefined,
       source: 'fetch'
     };
   } finally {
@@ -690,17 +756,35 @@ async function fetchSingleUrl(
   // 第1层结果转 Markdown
   let processedHtml: string;
   let markdownContent: string;
+  let isPdf = false;
   if (!fetchResult || fetchResult.htmlContent.trim().length === 0) {
     logMessage(server, "error", `Layer 1 returned empty content for: ${url}`);
     return BROWSER_FALLBACK_MESSAGE;
   }
-  try {
-    const converted = await convertToMarkdown(fetchResult.htmlContent);
-    processedHtml = converted.processedHtml;
-    markdownContent = converted.markdownContent;
-  } catch (error: any) {
-    // 转换错误保持原有语义向上抛
-    throw error;
+
+  // PDF 内容：跳过 HTML 转换，直接本地解析文本
+  if (isPdfContent(fetchResult.contentType, url)) {
+    isPdf = true;
+    if (!fetchResult.bytes || fetchResult.bytes.length === 0) {
+      logMessage(server, "warning", `Detected PDF but no binary body for: ${url}，按 HTML 流程处理`);
+      isPdf = false;
+      const converted = await convertToMarkdown(fetchResult.htmlContent);
+      processedHtml = converted.processedHtml;
+      markdownContent = converted.markdownContent;
+    } else {
+      logMessage(server, "info", `Detected PDF: ${url}，本地解析文本`);
+      markdownContent = await extractPdfText(fetchResult.bytes, url);
+      processedHtml = "";
+    }
+  } else {
+    try {
+      const converted = await convertToMarkdown(fetchResult.htmlContent);
+      processedHtml = converted.processedHtml;
+      markdownContent = converted.markdownContent;
+    } catch (error: any) {
+      // 转换错误保持原有语义向上抛
+      throw error;
+    }
   }
 
   if (!markdownContent || markdownContent.trim().length === 0) {
@@ -708,8 +792,8 @@ async function fetchSingleUrl(
     return createEmptyContentWarning(url, processedHtml.length, processedHtml);
   }
 
-  // Cache successful result
-  urlContentCache.set(url, fetchResult.htmlContent, markdownContent);
+  // Cache successful result（PDF 不缓存原始字节，只缓存提取后的文本）
+  urlContentCache.set(url, isPdf ? "" : fetchResult.htmlContent, markdownContent);
 
   // Apply pagination options
   const result = applyPaginationOptions(markdownContent, paginationOptions);

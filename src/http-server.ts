@@ -1,31 +1,22 @@
 import express from "express";
 import cors from "cors";
-import { randomUUID } from "crypto";
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import { createMcpHandler } from "@modelcontextprotocol/server";
+import { toNodeHandler } from "@modelcontextprotocol/node";
 import { packageVersion } from "./version.js";
 import { createMcpServer } from "./mcp-main.js";
-import { ResearchServer } from "./research.js";
 import { ALLOWED_ORIGINS } from "./config.js";
 
-function createServerInstance(): { server: Server; researchServer: ResearchServer } {
-  return createMcpServer();
-}
-
-interface SessionState {
-  server: Server;
-  researchServer: ResearchServer;
-  transport: StreamableHTTPServerTransport;
-  lastActivity: number;
-}
-
-const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
-
+/**
+ * 无状态 MCP HTTP 入口（createMcpHandler）：
+ * - 同一 /mcp 端点同时服务 2026-07-28（modern）与 2025-era（legacy stateless）客户端
+ * - 无会话状态 → 容器重启 / 水平扩展 / 负载均衡均无需粘性会话，适合 Docker 部署
+ * - 每个请求由 factory 新建 Server 实例，业务缓存（URL/rerank/去重）为模块级单例，跨请求共享
+ */
 export async function createHttpServer(): Promise<express.Application> {
   const app = express();
-  app.use(express.json());
-  
+  // 注意：不能全局挂 express.json()——toNodeHandler 需要读取原始请求流来解析 body，
+  // 若被 express.json() 抢先消费，MCP 请求会因 body 为空报 Parse error。
+
   app.use(cors({
     origin: (origin, callback) => {
       if (!origin || ALLOWED_ORIGINS.includes(origin)) {
@@ -35,196 +26,26 @@ export async function createHttpServer(): Promise<express.Application> {
       }
     },
     credentials: true,
-    exposedHeaders: ['Mcp-Session-Id'],
-    allowedHeaders: ['Content-Type', 'mcp-session-id'],
+    allowedHeaders: ['Content-Type', 'mcp-session-id', 'mcp-protocol-version', 'mcp-method', 'mcp-name'],
   }));
 
-  const sessions: Map<string, SessionState> = new Map();
+  const mcpHandler = createMcpHandler(() => createMcpServer().server);
 
-  // 定时清理过期会话
-  const cleanupInterval = setInterval(() => {
-    const now = Date.now();
-    for (const [id, session] of sessions) {
-      if (now - session.lastActivity > SESSION_TIMEOUT_MS) {
-        console.log(`[HTTP] Cleaning up expired session: ${id}`);
-        try {
-          session.transport.close?.();
-        } catch {}
-        sessions.delete(id);
-      }
-    }
-  }, 5 * 60 * 1000);
-
-  app.post('/mcp', async (req, res) => {
-    const sessionId = req.headers['mcp-session-id'] as string | undefined;
-    let session: SessionState;
-
-    if (sessionId && sessions.has(sessionId)) {
-      session = sessions.get(sessionId)!;
-      session.lastActivity = Date.now();
-      console.log(`[HTTP] Reusing session: ${sessionId}`);
-    } else if (!sessionId && isInitializeRequest(req.body)) {
-      console.log("[HTTP] Creating new session");
-      
-      const { server: newServer, researchServer } = createServerInstance();
-      
-      const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID(),
-        onsessioninitialized: (newSessionId) => {
-          sessions.set(newSessionId, {
-            server: newServer,
-            researchServer,
-            transport,
-            lastActivity: Date.now()
-          });
-          console.log(`[HTTP] Session initialized: ${newSessionId}`);
-        },
-      });
-
-      transport.onclose = () => {
-        if (transport.sessionId) {
-          console.log(`[HTTP] Session closed: ${transport.sessionId}`);
-          sessions.delete(transport.sessionId);
-        }
-      };
-
-      transport.onerror = (error) => {
-        console.error(`[HTTP] Transport error:`, error instanceof Error ? error.message : String(error));
-      };
-
-      try {
-        await newServer.connect(transport);
-        session = { server: newServer, researchServer, transport, lastActivity: Date.now() };
-      } catch (error) {
-        console.error(`[HTTP] Failed to connect server:`, error instanceof Error ? error.message : String(error));
-        res.status(500).json({
-          jsonrpc: '2.0',
-          error: {
-            code: -32603,
-            message: 'Internal error: Failed to initialize session',
-          },
-          id: null,
-        });
-        return;
-      }
-    } else if (sessionId && !sessions.has(sessionId)) {
-      // MCP spec: expired/unknown session must return 404 so the client re-initializes
-      console.warn(`[HTTP] POST request rejected - session not found:`, {
-        clientIP: req.ip || req.connection.remoteAddress,
-        sessionId,
-      });
-      res.status(404).json({
-        jsonrpc: '2.0',
-        error: {
-          code: -32001,
-          message: 'Session not found: please re-initialize',
-        },
-        id: null,
-      });
-      return;
-    } else {
-      console.warn(`[HTTP] POST request rejected - invalid request:`, {
-        clientIP: req.ip || req.connection.remoteAddress,
-        sessionId: sessionId || 'undefined',
-        hasInitializeRequest: isInitializeRequest(req.body),
-      });
-      res.status(400).json({
-        jsonrpc: '2.0',
-        error: {
-          code: -32000,
-          message: 'Bad Request: No valid session ID provided',
-        },
-        id: null,
-      });
-      return;
-    }
-
-    try {
-      await session.transport.handleRequest(req, res, req.body);
-    } catch (error) {
-      if (error instanceof Error && error.message.includes('accept')) {
-        console.warn(`[HTTP] Connection rejected due to missing headers:`, {
-          clientIP: req.ip || req.connection.remoteAddress,
-          error: error.message
-        });
-      }
-      throw error;
-    }
-  });
-
-  app.get('/mcp', async (req, res) => {
-    const sessionId = req.headers['mcp-session-id'] as string | undefined;
-    if (!sessionId || !sessions.has(sessionId)) {
-      console.warn(`[HTTP] GET request rejected - missing or invalid session ID:`, {
-        clientIP: req.ip || req.connection.remoteAddress,
-        sessionId: sessionId || 'undefined',
-      });
-      // MCP spec: unknown session → 404 (client should re-initialize); missing header → 400
-      res.status(sessionId ? 404 : 400).send(sessionId ? 'Session not found: please re-initialize' : 'Invalid or missing session ID');
-      return;
-    }
-
-    const session = sessions.get(sessionId)!;
-    session.lastActivity = Date.now();
-    try {
-      await session.transport.handleRequest(req, res);
-    } catch (error) {
-      console.warn(`[HTTP] GET request failed:`, {
-        clientIP: req.ip || req.connection.remoteAddress,
-        sessionId,
-        error: error instanceof Error ? error.message : String(error)
-      });
-      throw error;
-    }
-  });
-
-  app.delete('/mcp', async (req, res) => {
-    const sessionId = req.headers['mcp-session-id'] as string | undefined;
-    if (!sessionId || !sessions.has(sessionId)) {
-      console.warn(`[HTTP] DELETE request rejected - missing or invalid session ID:`, {
-        clientIP: req.ip || req.connection.remoteAddress,
-        sessionId: sessionId || 'undefined',
-      });
-      // MCP spec: unknown session → 404 (client should re-initialize); missing header → 400
-      res.status(sessionId ? 404 : 400).send(sessionId ? 'Session not found: please re-initialize' : 'Invalid or missing session ID');
-      return;
-    }
-
-    const session = sessions.get(sessionId)!;
-    session.lastActivity = Date.now();
-    try {
-      await session.transport.handleRequest(req, res);
-    } catch (error) {
-      console.warn(`[HTTP] DELETE request failed:`, {
-        clientIP: req.ip || req.connection.remoteAddress,
-        sessionId,
-        error: error instanceof Error ? error.message : String(error)
-      });
-      throw error;
-    }
-  });
+  app.all('/mcp', toNodeHandler(mcpHandler, {
+    onerror: (error) => {
+      console.error(`[HTTP] MCP handler error:`, error instanceof Error ? error.message : String(error));
+    },
+  }));
 
   app.get('/health', (_req, res) => {
-    res.json({ 
+    res.json({
       status: 'healthy',
       server: 'agent-search',
       version: packageVersion,
       transport: 'http',
-      activeSessions: sessions.size
+      mode: 'stateless',
     });
   });
-
-  // 关闭时清理定时器
-  const originalListen = app.listen.bind(app);
-  app.listen = (...args: any[]) => {
-    const server = originalListen(...args);
-    const originalClose = server.close.bind(server);
-    server.close = (callback?: () => void) => {
-      clearInterval(cleanupInterval);
-      return originalClose(callback);
-    };
-    return server;
-  };
 
   return app;
 }
