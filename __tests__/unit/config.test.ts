@@ -60,7 +60,7 @@ async function runTests() {
   }, results);
 
   await testFunction('MAX_DESCRIPTION_LENGTH default value', () => {
-    assert.equal(MAX_DESCRIPTION_LENGTH, 200);
+    assert.equal(MAX_DESCRIPTION_LENGTH, 150);
   }, results);
 
   await testFunction('FETCH_TIMEOUT_MS default value', () => {

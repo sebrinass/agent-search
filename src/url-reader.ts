@@ -275,17 +275,30 @@ function applyCharacterPagination(content: string, startChar: number = 0, maxLen
 
 function extractSection(markdownContent: string, sectionHeading: string): string {
   const lines = markdownContent.split('\n');
-  const sectionRegex = new RegExp(`^#{1,6}\s*.*${sectionHeading}.*$`, 'i');
+  // 兼容转义标题（\# 开头）：行首可有可无一个反斜杠
+  // 字符串里 \\\\? 传给 RegExp 后为 \\?，正则含义 = 匹配可选的反斜杠
+  const sectionRegex = new RegExp(`^\\\\?#{1,6}\\s*.*${sectionHeading}.*$`, 'i');
 
   let startIndex = -1;
   let currentLevel = 0;
+  let inCodeBlock = false;
 
-  // Find the section start
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+
+    // 代码围栏开关（``` 或 ~~~），章节提取不进入代码块内部找标题
+    if (/^\s*(```|~~~)/.test(line)) {
+      inCodeBlock = !inCodeBlock;
+      continue;
+    }
+    if (inCodeBlock) {
+      continue;
+    }
+
     if (sectionRegex.test(line)) {
       startIndex = i;
-      currentLevel = (line.match(/^#+/) || [''])[0].length;
+      // 标题层级：去掉可选的反斜杠后数 #
+      currentLevel = (line.replace(/^\\(?=#)/, '').match(/^#+/) || [''])[0].length;
       break;
     }
   }
@@ -298,7 +311,10 @@ function extractSection(markdownContent: string, sectionHeading: string): string
   let endIndex = lines.length;
   for (let i = startIndex + 1; i < lines.length; i++) {
     const line = lines[i];
-    const match = line.match(/^#+/);
+    if (/^\s*(```|~~~)/.test(line)) {
+      continue;
+    }
+    const match = line.replace(/^\\(?=#)/, '').match(/^#+/);
     if (match && match[0].length <= currentLevel) {
       endIndex = i;
       break;
@@ -337,9 +353,40 @@ function extractParagraphRange(markdownContent: string, range: string): string {
   }
 }
 
+/**
+ * 判断一行是否为 markdown 标题。
+ * 兼容两种情况：
+ * 1. 标准标题：`# 标题`、`## 标题`
+ * 2. 转义标题：`\# 标题`、`\## 标题`
+ *    （node-html-markdown 对 `<div># 标题</div>` 这类“未渲染的 markdown 源码”
+ *    会转义行首 # 为 \#，防止其被误认为标题语法）
+ */
+function isHeadingLine(line: string): boolean {
+  return /^\\?#{1,6}\s/.test(line);
+}
+
+/**
+ * 提取标题列表。跳过代码块（``` 围栏）内的内容，避免把代码注释（如 Python 的 # 注释）误当标题。
+ */
 function extractHeadings(markdownContent: string): string {
   const lines = markdownContent.split('\n');
-  const headings = lines.filter(line => /^#{1,6}\s/.test(line));
+  let inCodeBlock = false;
+  const headings: string[] = [];
+
+  for (const line of lines) {
+    // 代码围栏开关（``` 或 ~~~）
+    if (/^\s*(```|~~~)/.test(line)) {
+      inCodeBlock = !inCodeBlock;
+      continue;
+    }
+    if (inCodeBlock) {
+      continue;
+    }
+    if (isHeadingLine(line)) {
+      // 去掉转义反斜杠，统一输出标准标题格式
+      headings.push(line.replace(/^\\(?=#)/, ''));
+    }
+  }
 
   if (headings.length === 0) {
     return "No headings found in the content.";

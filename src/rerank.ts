@@ -15,6 +15,8 @@ import {
   RERANK_MODEL,
   RERANK_TIMEOUT_MS,
   RERANK_MAX_TEXT_LENGTH,
+  RERANK_MIN_SCORE_RATIO,
+  RERANK_MIN_SCORE,
   isRerankEnabled,
   TOP_K,
 } from './config.js';
@@ -122,12 +124,49 @@ async function callRerankApi(query: string, documents: string[], topN: number): 
  * 发超长正文会被模型内部截断，纯属浪费。故：
  * - title 完整保留（对相关性判断权重最大）
  * - content 截前 RERANK_MAX_TEXT_LENGTH 字符
- * - 总长封顶 RERANK_MAX_TEXT_LENGTH
+ * - 不再对拼接结果整体截断（避免长标题挤掉正文额度）
  */
 function buildRerankDocument(result: SearchResult): string {
   const title = result.title ?? '';
   const content = (result.content ?? '').slice(0, RERANK_MAX_TEXT_LENGTH);
-  return `${title} ${content}`.trim().slice(0, RERANK_MAX_TEXT_LENGTH);
+  return `${title} ${content}`.trim();
+}
+
+// ============ 相对阈值过滤 ============
+/**
+ * 动态剔除低分结果，双保险：
+ * 1. 相对阈值：真实分数低于「最高分 × RERANK_MIN_SCORE_RATIO」的剔除
+ *    （解决"不同模型分数分布不同"，跟自己的最高分比，跨模型稳定）
+ * 2. 绝对下限：真实分数低于 RERANK_MIN_SCORE 的直接剔除
+ *    （解决"搜索结果整体稀烂时矮子里拔高个"，保证绝对相关性）
+ * 两条都过了才算合格（取两者中更严格的那个）。
+ * - 只作用于真实分数条目；兜底补齐条目（rrfScore=0，无真实分数）不参与过滤
+ * - 至少保底 1 条（最高分那条），避免全部过滤光
+ * - RERANK_MIN_SCORE_RATIO<=0 且 RERANK_MIN_SCORE<=0 时关闭过滤
+ */
+function applyScoreFilter(scored: ScoredResult[]): ScoredResult[] {
+  const filteringDisabled = RERANK_MIN_SCORE_RATIO <= 0 && RERANK_MIN_SCORE <= 0;
+  if (filteringDisabled || scored.length <= 1) {
+    return scored;
+  }
+
+  // 区分真实分数条目与兜底补齐条目
+  const realHits = scored.filter(s => s.rrfScore > 0);
+  if (realHits.length === 0) {
+    return scored; // 全是兜底/伪分数，无从过滤
+  }
+
+  const maxScore = Math.max(...realHits.map(s => s.rrfScore));
+  // 双保险取更严格的那个
+  const relativeThreshold = maxScore * RERANK_MIN_SCORE_RATIO;
+  const threshold = Math.max(relativeThreshold, RERANK_MIN_SCORE);
+  const kept = realHits.filter(s => s.rrfScore >= threshold);
+
+  // 保底：过滤后为空则保留最高分那条
+  const filtered = kept.length > 0 ? kept : [realHits[0]];
+  const fallbacks = scored.filter(s => s.rrfScore === 0);
+
+  return [...filtered, ...fallbacks];
 }
 
 async function rerankWithCrossEncoder(query: string, results: SearchResult[]): Promise<ScoredResult[]> {
@@ -139,7 +178,7 @@ async function rerankWithCrossEncoder(query: string, results: SearchResult[]): P
   const cached = rerankCache.get(query, docUrls);
   if (cached) {
     logMessage(null, 'info', `Rerank 缓存命中（query: "${query}"）`);
-    return cached as ScoredResult[];
+    return applyScoreFilter(cached as ScoredResult[]).slice(0, TOP_K);
   }
 
   const data = await callRerankApi(query, documents, TOP_K);
@@ -182,10 +221,13 @@ async function rerankWithCrossEncoder(query: string, results: SearchResult[]): P
     }
   }
 
-  // 写入缓存
-  rerankCache.set(query, docUrls, scored);
+  // 动态剔除低分（相对阈值）
+  const filtered = applyScoreFilter(scored);
 
-  return scored.slice(0, TOP_K);
+  // 写入缓存（缓存全量结果，过滤在读取/返回时进行）
+  rerankCache.set(query, docUrls, filtered);
+
+  return filtered.slice(0, TOP_K);
 }
 
 // ============ 主入口 ============

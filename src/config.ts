@@ -20,8 +20,13 @@ export const RERANK_BASE_URL = process.env.RERANK_BASE_URL || '';
 export const RERANK_API_KEY = process.env.RERANK_API_KEY || '';
 export const RERANK_MODEL = process.env.RERANK_MODEL || 'jina-reranker-v2-base-multilingual';
 export const RERANK_TIMEOUT_MS = parseInt(process.env.RERANK_TIMEOUT_MS || '30000', 10);
-export const RERANK_MAX_TEXT_LENGTH = parseInt(process.env.RERANK_MAX_TEXT_LENGTH || '300', 10);
+export const RERANK_MAX_TEXT_LENGTH = parseInt(process.env.RERANK_MAX_TEXT_LENGTH || '150', 10);
 export const RERANK_CACHE_SIZE = parseInt(process.env.RERANK_CACHE_SIZE || '100', 10);
+// 动态过滤：真实 rerank 分数低于「最高分 × 该比例」的结果被剔除（0 = 关闭过滤）
+export const RERANK_MIN_SCORE_RATIO = parseFloat(process.env.RERANK_MIN_SCORE_RATIO || '0.5');
+// 绝对下限：真实 rerank 分数低于该值的直接剔除（0 = 关闭）。
+// 注意：不同 rerank 模型分数分布不同（gte-reranker 实测 0~4+，无关 <1.2），需按模型调。
+export const RERANK_MIN_SCORE = parseFloat(process.env.RERANK_MIN_SCORE || '1.0');
 export const isRerankEnabled = !!(RERANK_BASE_URL || RERANK_API_KEY);
 
 // ============ 搜索相关配置 ============
@@ -40,7 +45,7 @@ export const TOP_K = parseInt(process.env.TOP_K || '5', 10);
 
 // ============ Research 相关配置 ============
 export const MAX_KEYWORDS = parseInt(process.env.MAX_KEYWORDS || '3', 10);
-export const MAX_DESCRIPTION_LENGTH = parseInt(process.env.MAX_DESCRIPTION_LENGTH || '200', 10);
+export const MAX_DESCRIPTION_LENGTH = parseInt(process.env.MAX_DESCRIPTION_LENGTH || '150', 10);
 
 // ============ URL 读取相关配置 ============
 export const FETCH_TIMEOUT_MS = parseInt(process.env.FETCH_TIMEOUT_MS || '30000', 10);
@@ -48,7 +53,8 @@ export const ENABLE_READABILITY = process.env.ENABLE_READABILITY !== 'false';
 
 // ============ 缓存相关配置 ============
 export const LINK_DEDUP_TTL = parseInt(process.env.LINK_DEDUP_TTL || '86400', 10);
-export const URL_CACHE_TTL = parseInt(process.env.URL_CACHE_TTL || '3600', 10);
+// URL 内容缓存 TTL（秒）：quick-lru 要求 maxAge > 0，钳制最小值为 1（等效"基本不缓存"）
+export const URL_CACHE_TTL = Math.max(1, parseInt(process.env.URL_CACHE_TTL || '3600', 10));
 export const URL_CACHE_SIZE = parseInt(process.env.URL_CACHE_SIZE || '100', 10);
 
 // ============ HTTP 服务相关配置 ============
