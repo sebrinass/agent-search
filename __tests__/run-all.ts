@@ -17,6 +17,7 @@ import { runTests as runErrorHandlerTests } from './unit/error-handler.test.js';
 import { runTests as runResourcesTests } from './unit/resources.test.js';
 import { runTests as runSearchTests } from './unit/search.test.js';
 import { runTests as runUrlReaderTests } from './unit/url-reader.test.js';
+import { runTests as runUrlNormalizeTests } from './unit/url-normalize.test.js';
 import { runTests as runConfigTests } from './unit/config.test.js';
 import { runTests as runResearchTests } from './unit/research.test.js';
 import { runTests as runToolHandlersTests } from './unit/tool-handlers.test.js';
@@ -40,6 +41,7 @@ const testSuites: TestSuite[] = [
   { name: 'Resources', category: 'unit', run: runResourcesTests },
   { name: 'Search', category: 'unit', run: runSearchTests },
   { name: 'URL Reader', category: 'unit', run: runUrlReaderTests },
+  { name: 'URL Normalize', category: 'unit', run: runUrlNormalizeTests },
   { name: 'Config', category: 'unit', run: runConfigTests },
   { name: 'Research', category: 'unit', run: runResearchTests },
   { name: 'Tool Handlers', category: 'unit', run: runToolHandlersTests },

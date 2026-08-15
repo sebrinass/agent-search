@@ -25,7 +25,9 @@ export const READ_URL_TOOL: Tool = {
 2. 分页读取长文章（startChar + maxLength）
 3. 按章节提取（section）
 4. 按段落范围提取（paragraphRange）
-5. 仅获取标题大纲（readHeadings）`,
+5. 仅获取标题大纲（readHeadings）
+6. 提取页内链接列表（extractLinks）
+7. 强制刷新缓存（forceRefresh）`,
   inputSchema: {
     type: "object",
     properties: {
@@ -57,6 +59,14 @@ export const READ_URL_TOOL: Tool = {
         type: "boolean",
         description: "Return only a list of headings instead of full content",
       },
+      extractLinks: {
+        type: "boolean",
+        description: "Also return the list of links found in the page content (deduplicated, filtered). Useful for follow-up browsing without an extra search round.",
+      },
+      forceRefresh: {
+        type: "boolean",
+        description: "Skip the cached content (1h TTL) and fetch fresh content from the source",
+      },
       timeoutMs: {
         type: "number",
         description: "Request timeout in milliseconds (default: 30000, from FETCH_TIMEOUT_MS env var)",
@@ -73,6 +83,8 @@ export function isWebUrlReadArgs(args: unknown): args is {
   section?: string;
   paragraphRange?: string;
   readHeadings?: boolean;
+  extractLinks?: boolean;
+  forceRefresh?: boolean;
   timeoutMs?: number;
 } {
   if (
@@ -110,6 +122,12 @@ export function isWebUrlReadArgs(args: unknown): args is {
     return false;
   }
   if (urlArgs.readHeadings !== undefined && typeof urlArgs.readHeadings !== "boolean") {
+    return false;
+  }
+  if (urlArgs.extractLinks !== undefined && typeof urlArgs.extractLinks !== "boolean") {
+    return false;
+  }
+  if (urlArgs.forceRefresh !== undefined && typeof urlArgs.forceRefresh !== "boolean") {
     return false;
   }
   if (urlArgs.timeoutMs !== undefined && (typeof urlArgs.timeoutMs !== "number" || urlArgs.timeoutMs < 1000)) {

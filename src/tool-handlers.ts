@@ -105,6 +105,8 @@ export async function handleReadTool(
     section: typeof args.section === 'string' ? args.section : undefined,
     paragraphRange: typeof args.paragraphRange === 'string' ? args.paragraphRange : undefined,
     readHeadings: args.readHeadings === true,
+    extractLinks: args.extractLinks === true,
+    forceRefresh: args.forceRefresh === true,
   };
 
   if (!args.urls || args.urls.length === 0) {

@@ -13,6 +13,8 @@ export function registerReadCommand(program: Command) {
     .option("--section <heading>", "提取指定章节")
     .option("--paragraph-range <range>", "段落范围 (如 1-5, 3, 10-)")
     .option("--headings", "仅返回标题列表", false)
+    .option("--extract-links", "同时返回页内链接列表", false)
+    .option("--force-refresh", "跳过缓存强制抓取最新内容", false)
     .option("--timeout <ms>", "超时时间(ms)", String(FETCH_TIMEOUT_MS))
     .action(async (urls: string[], opts) => {
       // URL 格式预校验
@@ -44,6 +46,8 @@ export function registerReadCommand(program: Command) {
         section: opts.section,
         paragraphRange: opts.paragraphRange,
         readHeadings: opts.headings,
+        extractLinks: opts.extractLinks === true,
+        forceRefresh: opts.forceRefresh === true,
       };
 
       try {

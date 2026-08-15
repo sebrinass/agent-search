@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import QuickLRU from 'quick-lru';
+import { normalizeUrl } from './url-normalize.js';
 import {
   LINK_DEDUP_TTL,
   URL_CACHE_TTL,
@@ -199,13 +200,13 @@ export const linkDedupPool = new LinkDedupPool();
 export const urlContentCache = new UrlContentCache();
 export const rerankCache = new RerankCache();
 
-// 便捷函数：链接去重
+// 便捷函数：链接去重（统一走 URL 规范化，避免 utm/www/锚点等写法差异导致漏去重）
 export function isLinkDuplicate(url: string): boolean {
-  return linkDedupPool.isDuplicate(url);
+  return linkDedupPool.isDuplicate(normalizeUrl(url));
 }
 
 export function addLinksToDedup(urls: string[]): void {
-  linkDedupPool.addBatch(urls);
+  linkDedupPool.addBatch(urls.map(normalizeUrl));
 }
 
 // 导出类型

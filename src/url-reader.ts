@@ -2,7 +2,7 @@ import { Server } from "@modelcontextprotocol/server";
 import { NodeHtmlMarkdown } from "node-html-markdown";
 import { createProxyAgent } from "./proxy.js";
 import { logMessage } from "./logging.js";
-import { urlContentCache, linkDedupPool } from "./cache.js";
+import { urlContentCache, addLinksToDedup } from "./cache.js";
 import {
   assertUrlAllowed,
   isUrlSecurityPolicyDnsError,
@@ -60,6 +60,8 @@ export interface PaginationOptions {
   section?: string;
   paragraphRange?: string;
   readHeadings?: boolean;
+  extractLinks?: boolean;
+  forceRefresh?: boolean;
 }
 
 interface FetchResult {
@@ -366,6 +368,63 @@ function isHeadingLine(line: string): boolean {
 }
 
 /**
+ * 提取页内链接列表（用于 extractLinks 选项）。
+ * 从 markdown 文本中提取 [锚文本](url) 链接——markdown 是 Readability 过滤后
+ * 的正文转换而来，天然只含正文链接（导航/页脚已被剔除）。
+ * - 过滤：锚点(#)、mailto:、javascript:、无效 URL
+ * - 去重：同一 URL 只保留一次（保留第一个锚文本）
+ * - 返回 markdown 格式的列表块
+ */
+function extractPageLinks(markdownContent: string): string {
+  if (!markdownContent || !markdownContent.includes('](')) {
+    return '';
+  }
+
+  const seen = new Set<string>();
+  const links: Array<{ text: string; href: string }> = [];
+  // 排除图片 ![..](..)，支持可选 title: [text](url "title")
+  const linkRegex = /(?<!!)\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+
+  let match: RegExpExecArray | null;
+  while ((match = linkRegex.exec(markdownContent)) !== null) {
+    const href = match[2].trim();
+    const rawText = match[1].trim();
+
+    // 过滤无效链接
+    if (!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('javascript:')) {
+      continue;
+    }
+    // 仅接受 http/https
+    if (!/^https?:\/\//i.test(href)) {
+      continue;
+    }
+
+    if (seen.has(href)) {
+      continue;
+    }
+    seen.add(href);
+
+    // 还原 markdown 转义（如 \] \[ \*），避免锚文本残留反斜杠
+    const cleanText = rawText
+      .replace(/\\([\\`*_[\]()#+\-!])/g, '$1')
+      // 末尾反斜杠：其转义的字符（通常是 ]）已被链接语法吃掉，直接去掉
+      .replace(/\\$/, '');
+
+    links.push({
+      text: cleanText.slice(0, 100) || '(无锚文本)',
+      href,
+    });
+  }
+
+  if (links.length === 0) {
+    return '';
+  }
+
+  const lines = links.map(l => `- [${l.text}](${l.href})`);
+  return `\n\n### 页内链接 (${links.length} 个)\n\n${lines.join('\n')}`;
+}
+
+/**
  * 提取标题列表。跳过代码块（``` 围栏）内的内容，避免把代码注释（如 Python 的 # 注释）误当标题。
  */
 function extractHeadings(markdownContent: string): string {
@@ -426,7 +485,6 @@ function applyPaginationOptions(markdownContent: string, options: PaginationOpti
 
   return result;
 }
-
 // ============ Readability 提取 ============
 async function extractWithReadability(htmlContent: string, url: string): Promise<string | null> {
   if (!ENABLE_READABILITY) {
@@ -739,14 +797,17 @@ async function fetchSingleUrl(
   const startTime = Date.now();
   logMessage(server, "info", `Fetching URL: ${url}`);
 
-  // Check cache first
-  const cachedEntry = urlContentCache.get(url);
+  // Check cache first（forceRefresh 时跳过缓存，强制抓取最新内容）
+  const cachedEntry = paginationOptions.forceRefresh ? null : urlContentCache.get(url);
   if (cachedEntry) {
     logMessage(server, "info", `Using cached content for URL: ${url}`);
     const result = applyPaginationOptions(cachedEntry.markdownContent, paginationOptions);
+    const withLinks = paginationOptions.extractLinks
+      ? result + extractPageLinks(cachedEntry.markdownContent)
+      : result;
     const duration = Date.now() - startTime;
-    logMessage(server, "info", `Processed cached URL: ${url} (${result.length} chars in ${duration}ms)`);
-    return result;
+    logMessage(server, "info", `Processed cached URL: ${url} (${withLinks.length} chars in ${duration}ms)`);
+    return withLinks;
   }
 
   // Validate URL format
@@ -762,8 +823,8 @@ async function fetchSingleUrl(
   // 可通过 MCP_HTTP_ALLOW_PRIVATE_URLS=true 临时放行（仅限本地开发）
   assertUrlAllowed(parsedUrl);
 
-  // 添加到去重池
-  linkDedupPool.add(url);
+  // 添加到去重池（规范化后去重）
+  addLinksToDedup([url]);
 
   let fetchResult: FetchResult | null = null;
   let lastError: Error | null = null;
@@ -844,11 +905,14 @@ async function fetchSingleUrl(
 
   // Apply pagination options
   const result = applyPaginationOptions(markdownContent, paginationOptions);
+  const finalResult = paginationOptions.extractLinks
+    ? result + extractPageLinks(markdownContent)
+    : result;
 
   const duration = Date.now() - startTime;
-  logMessage(server, "info", `Successfully fetched URL via fetch: ${url} (${result.length} chars in ${duration}ms)`);
+  logMessage(server, "info", `Successfully fetched URL via fetch: ${url} (${finalResult.length} chars in ${duration}ms)`);
 
-  return result;
+  return finalResult;
 }
 
 // ============ 批量 URL 读取 ============
