@@ -342,6 +342,10 @@ services:
       - SEARXNG_URL=http://searxng:8080
       - RERANK_BASE_URL=http://host.docker.internal:11434
       - MCP_HTTP_PORT=3000
+      # 代理：与 SearXNG 同一代理，避免"搜得到读不了"
+      - HTTP_PROXY=${HTTP_PROXY:-}
+      - HTTPS_PROXY=${HTTPS_PROXY:-}
+      - NO_PROXY=${NO_PROXY:-}
 ```
 
 ---

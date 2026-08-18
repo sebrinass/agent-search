@@ -23,5 +23,9 @@ services:
     environment:
       - SEARXNG_URL=http://searxng:8080
       - MCP_HTTP_PORT=3000
+      # 代理（与 SearXNG 同一代理；搜索/阅读出站均会走代理）
+      - HTTP_PROXY=${HTTP_PROXY:-}
+      - HTTPS_PROXY=${HTTPS_PROXY:-}
+      - NO_PROXY=${NO_PROXY:-}
     depends_on:
       - searxng
