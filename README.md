@@ -24,7 +24,7 @@
 - **🎯 Rerank 重排** — cross-encoder 相关性重排，结果更精准（支持本地推理服务，零成本）
 - **📄 PDF 读取** — `urls_read` 直接读 PDF，本地解析不上传
 - **🔒 本地部署** — 数据不出本地，隐私安全可控
-- **🔄 MCP 双时代** — 同一端点同时支持 MCP 2026-07-28 与 2025 协议（Docker 无状态部署友好）
+- **🔄 MCP 双时代 + 会话模式** — 同一端点同时支持 MCP 2026-07-28 与 2025 协议；默认**有状态**（返回 mcp-session-id，Hermes 等客户端可正常注册工具），可环境变量切换无状态（多副本部署友好）
 
 ## 快速开始
 
@@ -51,7 +51,7 @@ cp .env.example .env
 # 编辑 .env 文件填入你的配置
 ```
 
-### 方式一：Docker（推荐，HTTP 无状态部署）
+### 方式一：Docker（推荐，HTTP 部署）
 
 ```bash
 docker run -d --name agent-search -p 3000:3000 \
@@ -61,7 +61,8 @@ docker run -d --name agent-search -p 3000:3000 \
   ghcr.io/sebrinass/agent-search:latest
 ```
 
-HTTP 模式为**无状态**设计（无会话 ID），容器重启/水平扩展无需粘性会话，可直接挂在负载均衡后。
+HTTP 模式默认**有状态**（initialize 返回 mcp-session-id，兼容 Hermes 等依赖会话的客户端）；
+如需多副本/负载均衡部署，设置 `MCP_SESSION_MODE=stateless` 切换为无状态（无会话 ID，无需粘性会话）。
 
 ### 方式二：npm
 
@@ -118,7 +119,8 @@ agent-search
 | `RERANK_API_KEY` | - | 云端 rerank API 密钥 |
 | `RERANK_TIMEOUT_MS` | 30000 | rerank 调用超时（毫秒），失败自动降级为 SearXNG 原始排序 |
 | `RERANK_MAX_TEXT_LENGTH` | 300 | 发给 rerank 的单条文档最大字符数 |
-| `MCP_HTTP_PORT` | - | HTTP 模式端口（无状态） |
+| `MCP_HTTP_PORT` | - | HTTP 模式端口 |
+| `MCP_SESSION_MODE` | stateful | HTTP 会话模式：`stateful`（默认，返回 mcp-session-id）/ `stateless`（无会话，多副本部署） |
 | `SEARCH_PAGES` | 1 | 每关键词抓取页数 |
 | `SEARCH_TIMEOUT_MS` | 60000 | 搜索超时（毫秒） |
 | `TOP_K` | 5 | 返回结果条数 |
@@ -225,7 +227,7 @@ agent-search urls-read https://example.com --timeout 15000
 # stdio 模式（默认）
 agent-search serve
 
-# HTTP 模式（无状态，推荐容器部署）
+# HTTP 模式（默认有状态，推荐容器部署）
 agent-search serve --transport http --port 3000
 ```
 
@@ -255,7 +257,7 @@ CLI 命令依赖以下环境变量：
 MCP_HTTP_PORT=3000 agent-search
 ```
 
-- **无状态设计**：无会话 ID，容器重启/多副本无需粘性会话
+- **有状态（默认）**：initialize 返回 mcp-session-id，Hermes 等依赖会话的客户端可正常注册工具；设 `MCP_SESSION_MODE=stateless` 切无状态（无会话 ID，多副本无需粘性会话）
 - **双协议兼容**：同一 `/mcp` 端点同时服务 MCP 2026-07-28（modern）与 2025-11-25（legacy）客户端，自动识别
 
 可用端点：

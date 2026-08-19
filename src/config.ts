@@ -59,6 +59,12 @@ export const URL_CACHE_SIZE = parseInt(process.env.URL_CACHE_SIZE || '100', 10);
 
 // ============ HTTP 服务相关配置 ============
 export const MCP_HTTP_PORT = process.env.MCP_HTTP_PORT;
+// MCP HTTP 会话模式：
+// - stateful（默认）：有状态，initialize 返回 mcp-session-id，依赖会话的客户端（如 Hermes）
+//   可正常注册工具；适合单实例 / 粘性会话场景
+// - stateless：无状态，每次请求由 factory 新建 Server 实例；适合多副本 / 负载均衡 Docker 部署
+// 注意：http-server.ts 在调用时实时读取本环境变量（便于测试切换），此处仅作集中声明。
+export const MCP_SESSION_MODE = (process.env.MCP_SESSION_MODE || 'stateful').toLowerCase();
 export const AUTH_USERNAME = process.env.AUTH_USERNAME;
 export const AUTH_PASSWORD = process.env.AUTH_PASSWORD;
 export const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS

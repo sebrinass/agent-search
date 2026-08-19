@@ -214,7 +214,7 @@ HTTP 请求 User-Agent。
 
 ### MCP_HTTP_PORT
 
-启用 HTTP 模式并指定端口。HTTP 模式为**无状态**设计（无会话 ID，双协议兼容）。
+启用 HTTP 模式并指定端口。HTTP 模式默认**有状态**（initialize 返回 mcp-session-id，兼容 Hermes 等依赖会话的客户端）；双协议兼容（2026-07-28 + 2025）。
 
 ```bash
 MCP_HTTP_PORT=3000
@@ -225,6 +225,23 @@ MCP_HTTP_PORT=3000
 启用后可访问：
 - MCP 端点: `http://localhost:3000/mcp`（同时支持 MCP 2026-07-28 与 2025 协议）
 - 健康检查: `http://localhost:3000/health`
+
+### MCP_SESSION_MODE
+
+HTTP 模式下的 MCP 会话管理方式：
+
+| 值 | 说明 |
+|----|------|
+| `stateful`（默认） | **有状态**：initialize 返回 `mcp-session-id`，后续请求需携带。兼容 Hermes 等依赖会话的客户端（否则其 MCP 工具注册失败，表现为直接调用报 `does not exist`）。会话空闲 30 分钟自动清理 |
+| `stateless` | **无状态**：每次请求由 factory 新建 Server 实例，不返回 session id。容器重启/水平扩展/负载均衡无需粘性会话，适合多副本 Docker 部署 |
+
+```bash
+# 有状态（默认，无需显式设置）
+MCP_SESSION_MODE=stateful
+
+# 无状态（多副本/负载均衡场景）
+MCP_SESSION_MODE=stateless
+```
 
 ### AUTH_USERNAME / AUTH_PASSWORD
 
@@ -323,7 +340,7 @@ RERANK_API_KEY=jina_xxxxx
 RERANK_MODEL=jina-reranker-v2-base-multilingual
 TOP_K=5
 
-# HTTP 模式（无状态）
+# HTTP 模式（默认有状态）
 MCP_HTTP_PORT=3000
 AUTH_USERNAME=admin
 AUTH_PASSWORD=your-secret-password
