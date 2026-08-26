@@ -297,7 +297,8 @@ outgoing:
 
 MCP 超时配置（agent-search 环境变量）：
 ```bash
-SEARCH_TIMEOUT_MS=30000  # 默认 30 秒
+SEARCH_TIMEOUT_MS=50000  # 整词兜底（毫秒），实际生效 = max(此值, 单页+rerank+5s)
+SEARCH_PAGE_TIMEOUT_MS=15000  # 单次抓页独立超时，默认 15 秒
 ```
 
 ---

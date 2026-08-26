@@ -122,7 +122,8 @@ agent-search
 | `MCP_HTTP_PORT` | - | HTTP 模式端口 |
 | `MCP_SESSION_MODE` | stateful | HTTP 会话模式：`stateful`（默认，返回 mcp-session-id）/ `stateless`（无会话，多副本部署） |
 | `SEARCH_PAGES` | 1 | 每关键词抓取页数 |
-| `SEARCH_TIMEOUT_MS` | 60000 | 搜索超时（毫秒） |
+| `SEARCH_TIMEOUT_MS` | 50000 | 整词兜底(毫秒);实际生效 = max(此值, 单页抓取 + rerank 超时 + 5s),rerank 慢不会被掐 |
+| `SEARCH_PAGE_TIMEOUT_MS` | 15000 | 单次抓页独立超时（毫秒），一页慢不拖死整词 |
 | `TOP_K` | 5 | 返回结果条数 |
 
 完整配置请参阅 [docs/configuration.md](docs/configuration.md)。
@@ -246,7 +247,8 @@ CLI 命令依赖以下环境变量：
 |------|------|------|
 | `SEARXNG_URL` | web-search 必填 | SearXNG 实例地址 |
 | `RERANK_BASE_URL` 或 `RERANK_API_KEY` | 是 | rerank 服务地址/密钥 |
-| `SEARCH_TIMEOUT_MS` | 否 | 搜索超时（毫秒），默认 60000 |
+| `SEARCH_TIMEOUT_MS` | 否 | 整词最坏情况兜底（毫秒），默认 50000（含 rerank 时间） |
+| `SEARCH_PAGE_TIMEOUT_MS` | 否 | 单次抓页超时（毫秒），默认 15000 |
 | `MCP_HTTP_PORT` | serve 命令 | HTTP 模式端口 |
 
 ## HTTP 模式（MCP 双时代）

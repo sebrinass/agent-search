@@ -7,7 +7,7 @@
  */
 
 import { strict as assert } from 'node:assert';
-import { fetchAndConvertToMarkdown } from '../../src/url-reader.js';
+import { fetchAndConvertToMarkdown, isUrlReadFailure } from '../../src/url-reader.js';
 import { urlContentCache } from '../../src/cache.js';
 import { testFunction, createTestResults, printTestSummary } from '../helpers/test-utils.js';
 import { createMockServer } from '../helpers/mock-server.js';
@@ -267,6 +267,69 @@ async function runTests() {
 
     fetchMocker.restore();
     envManager.restore();
+  }, results);
+
+  await testFunction('Anti-bot page detection returns failure message', async () => {
+    const mockServer = createMockServer();
+    urlContentCache.clear();
+
+    // 模拟 36kr 反爬拦截页：短内容 + 安全检测字样
+    const antiBotHtml = `
+      <html>
+        <head><title>安全检测</title></head>
+        <body>
+          <div class="antibot">
+            <h1>安全检测</h1>
+            <p>系统检测到您的请求异常，正在验证您的身份，请稍候...</p>
+          </div>
+        </body>
+      </html>
+    `;
+    fetchMocker.mock(createMockFetch({ body: antiBotHtml }));
+
+    const result = await fetchAndConvertToMarkdown(mockServer as any, 'https://antibot-example.com');
+    assert.ok(
+      typeof result === 'string' && result.includes('反爬拦截'),
+      `Anti-bot page should return anti-bot failure message, got: ${result.slice(0, 100)}`
+    );
+    // 反爬页不应被缓存
+    assert.equal(urlContentCache.get('https://antibot-example.com'), null, 'Anti-bot page should not be cached');
+
+    fetchMocker.restore();
+  }, results);
+
+  await testFunction('Normal page is NOT flagged as anti-bot', async () => {
+    const mockServer = createMockServer();
+    urlContentCache.clear();
+
+    // 长文章中出现"验证码"字样不应误伤
+    const longHtml = `
+      <html>
+        <head><title>如何安全登录</title></head>
+        <body>
+          <h1>如何安全登录</h1>
+          <p>${'这是一篇很长的正常文章内容，讲述了网站登录的安全注意事项。'.repeat(80)}</p>
+          <p>注册时可能需要输入验证码，这是正常流程。</p>
+        </body>
+      </html>
+    `;
+    fetchMocker.mock(createMockFetch({ body: longHtml }));
+
+    const result = await fetchAndConvertToMarkdown(mockServer as any, 'https://normal-example.com');
+    assert.ok(
+      typeof result === 'string' && !result.includes('反爬拦截'),
+      `Normal long page should not be flagged as anti-bot, got: ${result.slice(0, 100)}`
+    );
+
+    fetchMocker.restore();
+  }, results);
+
+  await testFunction('isUrlReadFailure detects failure markers', () => {
+    assert.equal(isUrlReadFailure(''), true, 'Empty content is failure');
+    assert.equal(isUrlReadFailure('   \n  '), true, 'Whitespace is failure');
+    assert.equal(isUrlReadFailure('⚠️ 页面内容疑似反爬拦截页（安全检测/人机验证/验证码），非真实文章内容，读取视为失败。\n建议：改用浏览器 MCP 处理此页面，或换其他来源 URL。'), true, 'Anti-bot message is failure');
+    assert.equal(isUrlReadFailure('📄 Content Warning: Page fetched but appears empty after conversion'), true, 'Content warning is failure');
+    assert.equal(isUrlReadFailure('这是一篇正常的文章内容，包含足够信息。'), false, 'Normal content is not failure');
   }, results);
 
   printTestSummary(results, 'URL Reader Module');

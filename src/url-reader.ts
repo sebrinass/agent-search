@@ -81,6 +81,52 @@ const BROWSER_FALLBACK_MESSAGE = `无法获取页面内容。
 
 建议：请使用浏览器 MCP 处理此页面。`;
 
+// 反爬拦截页返回的提示：页面本身可访问，但内容是"安全检测/人机验证"等拦截页，
+// 不是真实内容。明确告诉 agent 此 URL 读取失败，避免把拦截页当有效资料。
+const ANTIBOT_MESSAGE = `⚠️ 页面内容疑似反爬拦截页（安全检测/人机验证/验证码），非真实文章内容，读取视为失败。
+建议：改用浏览器 MCP 处理此页面，或换其他来源 URL。`;
+
+// 反爬拦截页特征词：命中任一即怀疑是拦截页（配合短正文判断，降低误伤正常长文）
+const ANTIBOT_PATTERNS = [
+  /安全检测/i,
+  /安全验证/i,
+  /人机验证/i,
+  /请输入验证码/i,
+  /拖动滑块.*验证/i,
+  /captcha/i,
+  /access denied/i,
+  /unusual traffic/i,
+  /确认您是真人/i,
+  /enable javascript to continue/i,
+  /please enable js/i,
+  /are you a robot/i,
+  /verify you are human/i,
+];
+
+/**
+ * 判断页面内容是否为反爬拦截页：
+ * - 命中特征词，且
+ * - 转换后的正文很短（拦截页通常只有一句提示，正常文章不会这么短）
+ * 两个条件都满足才判定为拦截页，避免误伤正常页面。
+ */
+function isAntiBotPage(markdownContent: string): boolean {
+  const trimmed = markdownContent.trim();
+  if (!trimmed) return false;
+  // 拦截页正文极短（< 400 字符），长页面不判定，降低误伤
+  if (trimmed.length > 400) return false;
+  return ANTIBOT_PATTERNS.some(pattern => pattern.test(trimmed));
+}
+
+/** 判断返回内容是否代表失败（用于批量读取时标记 error） */
+export function isUrlReadFailure(content: string): boolean {
+  if (!content || content.trim().length === 0) return true;
+  return (
+    content.startsWith(BROWSER_FALLBACK_MESSAGE) ||
+    content.startsWith(ANTIBOT_MESSAGE) ||
+    content.startsWith("📄 Content Warning:")
+  );
+}
+
 // ============ Happy DOM 懒加载 ============
 let happyDomModule: typeof import('happy-dom') | null = null;
 let readabilityModule: typeof import('@mozilla/readability') | null = null;
@@ -900,6 +946,13 @@ async function fetchSingleUrl(
     return createEmptyContentWarning(url, processedHtml.length, processedHtml);
   }
 
+  // 反爬拦截页识别：页面能访问但内容是"安全检测/验证码"拦截页，
+  // 直接返回失败提示，不让 agent 把拦截页当有效资料；也不写缓存。
+  if (isAntiBotPage(markdownContent)) {
+    logMessage(server, "warning", `Anti-bot page detected for: ${url}`);
+    return ANTIBOT_MESSAGE;
+  }
+
   // Cache successful result（PDF 不缓存原始字节，只缓存提取后的文本）
   urlContentCache.set(url, isPdf ? "" : fetchResult.htmlContent, markdownContent);
 
@@ -941,7 +994,13 @@ async function fetchMultipleUrls(
   const fetchPromises = uniqueUrls.map(async (url) => {
     try {
       const content = await fetchSingleUrl(server, url, timeoutMs, paginationOptions);
-      results.push({ url, content });
+      // 失败哨兵识别：反爬拦截页 / 浏览器兜底提示 / 空内容警告 都算读取失败，
+      // 不能让 agent 误以为拿到了可用资料。
+      if (isUrlReadFailure(content)) {
+        results.push({ url, content: "", error: content || "URL 读取失败" });
+      } else {
+        results.push({ url, content });
+      }
     } catch (error: any) {
       const errorMessage = error?.message as string | undefined;
       results.push({

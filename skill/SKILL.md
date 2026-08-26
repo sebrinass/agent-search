@@ -80,8 +80,11 @@ env:
     - name: "MCP_HTTP_PORT"
       description: "HTTP 模式端口（未设置时不启用 HTTP 模式）"
     - name: "SEARCH_TIMEOUT_MS"
-      description: "搜索超时（毫秒）"
-      default: "60000"
+      description: "整词兜底（毫秒），实际生效 = max(此值, 单页抓取+rerank超时+5s)，rerank 慢不会被掐"
+      default: "50000"
+    - name: "SEARCH_PAGE_TIMEOUT_MS"
+      description: "单次抓页独立超时（毫秒），一页慢不拖死整词"
+      default: "15000"
 source: "https://github.com/sebrinass/agent-search"
 homepage: "https://github.com/sebrinass/agent-search"
 ---
@@ -151,6 +154,11 @@ rerank 服务不可用时自动降级为 SearXNG 原始排序（约 50%），搜
 - ❌ **差**: `["React"]`
 
 多关键词可以并行搜索不同角度，显著提升结果覆盖面和相关性。
+
+**调用格式红线（实测高频错误）**：
+- `searchedKeywords` 必须是**字符串数组**，不是单个字符串。错误示例：`"React 性能优化"`（会被拆成单个字符）；正确示例：`["React 性能优化"]`
+- **同一意图只搜一次**：把想查的几个角度合并进一次调用的 2-3 个关键词里，不要换个措辞反复搜索同一个问题（浪费配额且结果重复）
+- 若上次结果不理想，先检查参数格式是否正确，再换互补角度重试，而不是原词原样重搜
 
 ### 分类选择建议
 
@@ -246,7 +254,8 @@ agent-search urls-read https://example.com --headings
 | `RERANK_API_KEY` | - | 云端 rerank API 密钥 |
 | `RERANK_TIMEOUT_MS` | 30000 | rerank 调用超时，失败自动降级原始排序 |
 | `MCP_HTTP_PORT` | - | HTTP 模式端口（无状态，未设置时不启用） |
-| `SEARCH_TIMEOUT_MS` | 60000 | 搜索超时（毫秒） |
+| `SEARCH_TIMEOUT_MS` | 50000 | 整词兜底（毫秒），实际生效 = max(此值, 单页+rerank+5s) |
+| `SEARCH_PAGE_TIMEOUT_MS` | 15000 | 单次抓页独立超时（毫秒），一页慢不拖死整词 |
 
 完整配置请参阅 [GitHub 配置参考](https://github.com/sebrinass/agent-search/blob/main/docs/configuration.md)。
 

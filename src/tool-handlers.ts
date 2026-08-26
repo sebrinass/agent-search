@@ -131,6 +131,29 @@ export async function handleSearchTool(
   args: unknown
 ): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
   const typedArgs = args as Record<string, unknown>;
+
+  // ============ 运行时类型校验（防 agent 传错格式） ============
+  // 实测中 LLM 常把 searchedKeywords 传成字符串（如 "关键词1 关键词2"），
+  // 直接透传会被 Array.from 按字符拆成单字，返回一堆垃圾结果。
+  // 这里在入口处显式校验并返回明确错误，而不是默默接受错误类型。
+  const rawKeywords = typedArgs.searchedKeywords;
+  if (rawKeywords !== undefined && rawKeywords !== null) {
+    if (!Array.isArray(rawKeywords)) {
+      throw new Error(
+        `searchedKeywords 参数类型错误：期望字符串数组，实际收到 ${typeof rawKeywords}。` +
+        `正确格式示例：{"searchedKeywords": ["关键词1", "关键词2"]}。` +
+        `实际值：${JSON.stringify(rawKeywords)}`
+      );
+    }
+    const nonStringItems = rawKeywords.filter(item => typeof item !== 'string' || item.trim().length === 0);
+    if (nonStringItems.length > 0) {
+      throw new Error(
+        `searchedKeywords 数组包含非法元素：所有元素必须是非空字符串。` +
+        `非法元素：${JSON.stringify(nonStringItems)}`
+      );
+    }
+  }
+
   const searchInput: SearchInput = {
     searchedKeywords: typedArgs.searchedKeywords as string[] | undefined,
     site: typedArgs.site as string | undefined,

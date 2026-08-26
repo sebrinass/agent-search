@@ -36,7 +36,14 @@ export const isRerankEnabled = !!(RERANK_BASE_URL || RERANK_API_KEY);
 export const DEFAULT_SEARCH_PAGES = 1;
 export const SEARCH_PAGES = parseInt(process.env.SEARCH_PAGES || String(DEFAULT_SEARCH_PAGES), 10);
 export const SEARCH_ENGINES = process.env.SEARCH_ENGINES || '';
-export const SEARCH_TIMEOUT_MS = parseInt(process.env.SEARCH_TIMEOUT_MS || '60000', 10);
+// 整词最坏情况兜底 = 单页抓取(15s) + rerank(30s) + 余量(5s)：
+// 保证 rerank 永远有完整超时时间，rerank 超时后会降级为 SearXNG 原始排序，结果不会丢失。
+// 若抓页全部成功但 rerank 慢，整词不会提前截断。
+export const SEARCH_TIMEOUT_MS = parseInt(process.env.SEARCH_TIMEOUT_MS || '50000', 10);
+// 单次 SearXNG 页面请求的独立超时（应小于 SEARCH_TIMEOUT_MS）：
+// 一个慢页只影响该页，不拖死整个关键词的并发抓取。
+// 注意：这是 fetch 抓页的超时，与 rerank 无关（rerank 走 RERANK_TIMEOUT_MS，本地模型慢可接受）。
+export const SEARCH_PAGE_TIMEOUT_MS = parseInt(process.env.SEARCH_PAGE_TIMEOUT_MS || '15000', 10);
 export const SEARCH_LANGUAGE = process.env.SEARCH_LANGUAGE || 'all';
 export const SAFE_SEARCH = parseInt(process.env.SAFE_SEARCH || '0', 10);
 

@@ -114,13 +114,25 @@ SEARCH_ENGINES=google,baidu,bing
 
 ### SEARCH_TIMEOUT_MS
 
-搜索超时时间（毫秒）。
+单关键词整体搜索最坏情况兜底（毫秒，含抓页 + rerank）。
 
 ```bash
-SEARCH_TIMEOUT_MS=60000
+SEARCH_TIMEOUT_MS=50000
 ```
 
-**默认值：** `60000`（60 秒）
+**默认值：** `50000`（50 秒）
+
+**实际生效规则：** `max(SEARCH_TIMEOUT_MS, SEARCH_PAGE_TIMEOUT_MS + RERANK_TIMEOUT_MS + 5000)`。即无论显式配多少，兜底都不会小于「单页抓取 + rerank 超时 + 5s 余量」——保证 rerank 永远有完整超时时间，rerank 超时后自行降级为 SearXNG 原始排序（结果不丢失），整词兜底不会抢在降级前截断。
+
+### SEARCH_PAGE_TIMEOUT_MS
+
+单次 SearXNG 页面请求的独立超时（毫秒），应小于 `SEARCH_TIMEOUT_MS`。一页慢只丢该页（该页返回空结果），不拖死整个关键词的并发抓取。
+
+```bash
+SEARCH_PAGE_TIMEOUT_MS=15000
+```
+
+**默认值：** `15000`（15 秒）
 
 ### SEARCH_LANGUAGE
 

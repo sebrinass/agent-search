@@ -15,6 +15,8 @@ import { loadBlacklist, isBlacklisted } from "./blacklist.js";
 import {
   MAX_KEYWORDS,
   SEARCH_TIMEOUT_MS,
+  SEARCH_PAGE_TIMEOUT_MS,
+  RERANK_TIMEOUT_MS,
   MAX_DESCRIPTION_LENGTH,
   SEARCH_PAGES,
   SEARCH_LANGUAGE,
@@ -109,7 +111,17 @@ export class ResearchServer {
 
       const pagePromises: Promise<Array<{ title: string; content: string; url: string; score: number }>>[] = [];
       for (let page = 1; page <= pagesToFetch; page++) {
-        pagePromises.push(fetchSinglePage(this.server, keyword, page, time_range, effectiveLang, effectiveSafeSearch, site, category));
+        // 单页独立超时：一页慢只丢该页，不拖死整词搜索（整词超时由外层 SEARCH_TIMEOUT_MS 兜底）
+        const pagePromise = Promise.race([
+          fetchSinglePage(this.server, keyword, page, time_range, effectiveLang, effectiveSafeSearch, site, category),
+          new Promise<Array<{ title: string; content: string; url: string; score: number }>>((_, reject) => {
+            setTimeout(() => reject(new Error(`单页搜索超时(${SEARCH_PAGE_TIMEOUT_MS}ms)`)), SEARCH_PAGE_TIMEOUT_MS);
+          })
+        ]).catch((err: Error) => {
+          logMessage(this.server, "warning", `Page ${page} fetch failed for "${keyword}": ${err.message}`);
+          return [];
+        });
+        pagePromises.push(pagePromise);
       }
 
       const pageResults = await Promise.all(pagePromises);
@@ -210,8 +222,16 @@ export class ResearchServer {
     }
 
     const searchWithTimeout = async (keyword: string): Promise<KeywordSearchResult> => {
+      // 整词兜底超时：取「显式配置」与「单页抓取 + rerank 超时 + 余量」的较大值。
+      // 关键约束：兜底必须 ≥ SEARCH_PAGE_TIMEOUT_MS + RERANK_TIMEOUT_MS，
+      // 否则 rerank 慢（尤其本地模型，RERANK_TIMEOUT_MS 可能配到 180s）时会被提前截断，
+      // 连降级为 SearXNG 原始排序的机会都没有。
+      const effectiveTimeout = Math.max(
+        SEARCH_TIMEOUT_MS,
+        SEARCH_PAGE_TIMEOUT_MS + RERANK_TIMEOUT_MS + 5000
+      );
       const timeoutPromise = new Promise<KeywordSearchResult>((_, reject) => {
-        setTimeout(() => reject(new Error('搜索超时')), SEARCH_TIMEOUT_MS);
+        setTimeout(() => reject(new Error('搜索超时')), effectiveTimeout);
       });
 
       const searchPromise = this.searchKeyword(keyword, site, time_range, lang, safeSearch, category);
@@ -284,7 +304,7 @@ export const SEARCH_TOOL: Tool = {
       searchedKeywords: {
         type: "array",
         items: { type: "string" },
-        description: "搜索关键词列表，强烈建议提供2-3个关键词以获得最佳并发搜索效果。单关键词搜索效率较低，多个关键词可并行搜索不同角度。最多3个并发"
+        description: "搜索关键词列表（必须是字符串数组，不是字符串！）。强烈建议提供2-3个关键词以获得最佳并发搜索效果。单关键词搜索效率较低，多个关键词可并行搜索不同角度。最多3个并发。示例：[\"大模型 趋势\", \"agent 应用 落地\"]"
       },
       site: {
         type: "string",

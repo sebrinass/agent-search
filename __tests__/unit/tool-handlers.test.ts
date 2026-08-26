@@ -95,6 +95,50 @@ async function runTests() {
     assert.ok(result.content, 'Should return content even with empty keywords');
   }, results);
 
+  await testFunction('handleSearchTool rejects string searchedKeywords (not array)', async () => {
+    const researchServer = new ResearchServer();
+
+    // LLM 实测常见错误：把 searchedKeywords 传成字符串。必须返回明确错误，禁止拆字。
+    try {
+      await handleSearchTool(researchServer, {
+        searchedKeywords: 'Kimi K3 月之暗面 大模型'
+      } as any);
+      assert.fail('Should have thrown for string searchedKeywords');
+    } catch (error: any) {
+      assert.ok(
+        error.message.includes('searchedKeywords') && error.message.includes('数组'),
+        `Error should mention searchedKeywords array type, got: ${error.message}`
+      );
+      assert.ok(error.message.includes('示例'), 'Error should include format example');
+    }
+  }, results);
+
+  await testFunction('handleSearchTool rejects array with non-string items', async () => {
+    const researchServer = new ResearchServer();
+
+    try {
+      await handleSearchTool(researchServer, {
+        searchedKeywords: [123, 'valid']
+      } as any);
+      assert.fail('Should have thrown for non-string array items');
+    } catch (error: any) {
+      assert.ok(error.message.includes('非法元素'), `Error should mention invalid items, got: ${error.message}`);
+    }
+  }, results);
+
+  await testFunction('handleSearchTool accepts valid string array', async () => {
+    const researchServer = new ResearchServer();
+    fetchMocker.mock(createMockFetch({ json: { results: [] } }));
+
+    const result = await handleSearchTool(researchServer, {
+      searchedKeywords: ['关键词1', '关键词2']
+    });
+
+    assert.ok(result.content, 'Valid array should pass validation');
+
+    fetchMocker.restore();
+  }, results);
+
   // ============ handleReadTool ============
 
   await testFunction('handleReadTool throws on invalid arguments', async () => {
