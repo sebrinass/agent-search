@@ -1,10 +1,13 @@
 import { Server, LoggingLevel } from "@modelcontextprotocol/server";
+import { Tool } from "@modelcontextprotocol/server";
 import { READ_URL_TOOL, isWebUrlReadArgs } from "./types.js";
 import { logMessage, setLogLevel } from "./logging.js";
 import { fetchAndConvertToMarkdown, PaginationOptions } from "./url-reader.js";
 import { ResearchServer, SearchInput, SEARCH_TOOL } from "./research.js";
+import { minimaxSearch } from "./minimax-search.js";
+import { exaSearch } from "./exa-search.js";
 import { createConfigResource, createHelpResource } from "./resources.js";
-import { FETCH_TIMEOUT_MS } from "./config.js";
+import { FETCH_TIMEOUT_MS, isMinimaxEnabled, isExaEnabled } from "./config.js";
 
 /**
  * 向 MCP Server 注册所有请求处理器（工具列表、工具调用、日志级别、资源列表、资源读取）。
@@ -16,7 +19,7 @@ export function registerRequestHandlers(server: Server, researchServer: Research
   server.setRequestHandler('tools/list', async () => {
     logMessage(server, "debug", "Handling list_tools request");
     return {
-      tools: [SEARCH_TOOL, ...getToolDefinitions()],
+      tools: [SEARCH_TOOL, ...getToolDefinitions(), ...getCloudSearchTools()],
     };
   });
 
@@ -88,6 +91,62 @@ export function registerRequestHandlers(server: Server, researchServer: Research
 
 export function getToolDefinitions() {
   return [READ_URL_TOOL];
+}
+
+/**
+ * 云端搜索工具定义（MiniMax / Exa）。
+ * 按环境变量动态注册：MiniMax 配 key 即注册；Exa 由 ENABLE_EXA_SEARCH 控制。
+ */
+export function getCloudSearchTools(): Tool[] {
+  const tools: Tool[] = [];
+
+  if (isMinimaxEnabled) {
+    tools.push({
+      name: "minimax_search",
+      description: `MiniMax 商业搜索工具（Coding Plan Token）。单关键词搜索，中文覆盖好，返回官方排序结果（含标题、链接、摘要、日期）。适合中文/国内外站点检索、实时信息查询。返回结构：{ keyword, results: [{title, link, snippet, publishedDate}], related }`,
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "搜索关键词（单个字符串）",
+          },
+          count: {
+            type: "number",
+            description: "返回结果数量（默认10，最大10）",
+            minimum: 1,
+            maximum: 10,
+          },
+        },
+        required: ["query"],
+      },
+    });
+  }
+
+  if (isExaEnabled) {
+    tools.push({
+      name: "exa_search",
+      description: `Exa 语义搜索工具。单关键词搜索，基于语义相似度（neural），能发现关键词字面不同但语义相近的页面，补足传统搜索引擎的长尾盲区。适合语义发现、新话题调研、技术文档检索。返回结构：{ keyword, results: [{title, link, snippet, publishedDate}] }`,
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "搜索关键词（单个字符串）",
+          },
+          count: {
+            type: "number",
+            description: "返回结果数量（默认10，最大10）",
+            minimum: 1,
+            maximum: 10,
+          },
+        },
+        required: ["query"],
+      },
+    });
+  }
+
+  return tools;
 }
 
 export async function handleReadTool(
@@ -172,6 +231,91 @@ export async function handleSearchTool(
   return result;
 }
 
+/**
+ * minimax_search 工具调用：参数校验 + 调用 + 归一化输出壳
+ */
+export async function handleMinimaxSearchTool(
+  server: Server,
+  args: unknown
+): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
+  const typedArgs = args as Record<string, unknown>;
+
+  if (typeof typedArgs.query !== "string" || typedArgs.query.trim() === "") {
+    throw new Error(`minimax_search 参数错误：query 必须是非空字符串。实际值：${JSON.stringify(typedArgs.query)}`);
+  }
+
+  let count = 10;
+  if (typedArgs.count !== undefined) {
+    if (typeof typedArgs.count !== "number" || typedArgs.count < 1 || typedArgs.count > 10) {
+      throw new Error("minimax_search 参数错误：count 必须是 1-10 之间的数字");
+    }
+    count = typedArgs.count;
+  }
+
+  const result = await minimaxSearch(server, typedArgs.query, count);
+
+  if (result.error) {
+    return {
+      content: [{ type: "text", text: JSON.stringify({ source: "minimax", error: result.error }, null, 2) }],
+      isError: true,
+    };
+  }
+
+  return {
+    content: [{
+      type: "text",
+      text: JSON.stringify({
+        source: "minimax",
+        keyword: result.keyword,
+        results: result.results,
+        related: result.related,
+      }, null, 2),
+    }],
+  };
+}
+
+/**
+ * exa_search 工具调用：参数校验 + 调用 + 归一化输出壳
+ */
+export async function handleExaSearchTool(
+  server: Server,
+  args: unknown
+): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
+  const typedArgs = args as Record<string, unknown>;
+
+  if (typeof typedArgs.query !== "string" || typedArgs.query.trim() === "") {
+    throw new Error(`exa_search 参数错误：query 必须是非空字符串。实际值：${JSON.stringify(typedArgs.query)}`);
+  }
+
+  let count = 10;
+  if (typedArgs.count !== undefined) {
+    if (typeof typedArgs.count !== "number" || typedArgs.count < 1 || typedArgs.count > 10) {
+      throw new Error("exa_search 参数错误：count 必须是 1-10 之间的数字");
+    }
+    count = typedArgs.count;
+  }
+
+  const result = await exaSearch(server, typedArgs.query, count);
+
+  if (result.error) {
+    return {
+      content: [{ type: "text", text: JSON.stringify({ source: "exa", error: result.error }, null, 2) }],
+      isError: true,
+    };
+  }
+
+  return {
+    content: [{
+      type: "text",
+      text: JSON.stringify({
+        source: "exa",
+        keyword: result.keyword,
+        results: result.results,
+      }, null, 2),
+    }],
+  };
+}
+
 export async function handleToolCall(
   server: Server,
   researchServer: ResearchServer,
@@ -187,6 +331,12 @@ export async function handleToolCall(
 
       case "web_search":
         return await handleSearchTool(researchServer, args);
+
+      case "minimax_search":
+        return await handleMinimaxSearchTool(server, args);
+
+      case "exa_search":
+        return await handleExaSearchTool(server, args);
 
       default:
         throw new Error(`Unknown tool: ${toolName}`);

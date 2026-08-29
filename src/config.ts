@@ -87,6 +87,23 @@ export const NO_PROXY = process.env.NO_PROXY || process.env.no_proxy;
 export const USER_AGENT = process.env.USER_AGENT;
 export const SEARXNG_URL = process.env.SEARXNG_URL;
 
+// ============ MiniMax 搜索（Coding Plan Token）配置 ============
+// 配了 MINIMAX_API_KEY 就自动注册 minimax_search 工具（无需开关）。
+// MINIMAX_API_HOST 默认国内区；海外订阅可改为 https://api.minimax.io
+export const MINIMAX_API_KEY = process.env.MINIMAX_API_KEY || '';
+export const MINIMAX_API_HOST = process.env.MINIMAX_API_HOST || 'https://api.minimaxi.com';
+export const MINIMAX_SEARCH_TIMEOUT_MS = parseInt(process.env.MINIMAX_SEARCH_TIMEOUT_MS || '20000', 10);
+export const isMinimaxEnabled = !!MINIMAX_API_KEY;
+
+// ============ Exa 搜索配置 ============
+// ENABLE_EXA_SEARCH 开关（默认 true）+ EXA_API_KEY（可空）：
+// - 填了 EXA_API_KEY：直连 Exa HTTP API（快、额度高）
+// - 没填：走 Exa 托管 MCP 匿名端点（限流，报错由 agent 自行切换其他工具兜底）
+export const ENABLE_EXA_SEARCH = process.env.ENABLE_EXA_SEARCH !== 'false';
+export const EXA_API_KEY = process.env.EXA_API_KEY || '';
+export const EXA_SEARCH_TIMEOUT_MS = parseInt(process.env.EXA_SEARCH_TIMEOUT_MS || '20000', 10);
+export const isExaEnabled = ENABLE_EXA_SEARCH;
+
 // ============ 黑名单相关配置 ============
 /** 黑名单文件路径，默认为项目根目录的 blacklist.md，可通过环境变量覆盖 */
 export const BLACKLIST_PATH = process.env.BLACKLIST_PATH || path.join(PROJECT_ROOT, "blacklist.md");
