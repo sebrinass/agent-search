@@ -45,7 +45,7 @@ export const SEARCH_TIMEOUT_MS = parseInt(process.env.SEARCH_TIMEOUT_MS || '5000
 // 注意：这是 fetch 抓页的超时，与 rerank 无关（rerank 走 RERANK_TIMEOUT_MS，本地模型慢可接受）。
 export const SEARCH_PAGE_TIMEOUT_MS = parseInt(process.env.SEARCH_PAGE_TIMEOUT_MS || '15000', 10);
 export const SEARCH_LANGUAGE = process.env.SEARCH_LANGUAGE || 'all';
-export const SAFE_SEARCH = parseInt(process.env.SAFE_SEARCH || '0', 10);
+export const SAFE_SEARCH = parseInt(process.env.SAFE_SEARCH || '1', 10);
 
 // ============ Rerank 结果数量 ============
 export const TOP_K = parseInt(process.env.TOP_K || '5', 10);
