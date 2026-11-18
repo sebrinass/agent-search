@@ -54,6 +54,13 @@ export interface KeywordSearchResult {
   keyword: string;
   results: SearchResultItem[];
   error?: string;
+  /**
+   * true 表示该关键词存在抓取失败（通常是全部页失败）。
+   * 此时 results 为空并不代表「确实没有结果」，agent 应据此决定重试或换工具。
+   */
+  degraded?: boolean;
+  /** 失败页的简要原因（已脱敏，仅保留可读消息） */
+  failures?: string[];
 }
 
 /**
@@ -62,6 +69,10 @@ export interface KeywordSearchResult {
 export interface ResearchResult {
   searchResults?: KeywordSearchResult[];
   message?: string;
+  /** 全部关键词均抓取失败：结果不可信，不代表没有内容 */
+  degraded?: boolean;
+  /** 失败原因摘要（最多保留前几条，避免刷屏） */
+  failures?: string[];
 }
 
 /**
@@ -110,6 +121,9 @@ export class ResearchServer {
       const pagesToFetch = SEARCH_PAGES;
 
       const pagePromises: Promise<Array<{ title: string; content: string; url: string; score: number }>>[] = [];
+      // 收集失败页原因：用于区分「引擎故障」与「确实没有结果」，
+      // 两者对 agent 的含义完全不同（前者应重试，后者应换关键词）。
+      const pageFailures: string[] = [];
       for (let page = 1; page <= pagesToFetch; page++) {
         // 单页独立超时：一页慢只丢该页，不拖死整词搜索（整词超时由外层 SEARCH_TIMEOUT_MS 兜底）
         const pagePromise = Promise.race([
@@ -119,6 +133,7 @@ export class ResearchServer {
           })
         ]).catch((err: Error) => {
           logMessage(this.server, "warning", `Page ${page} fetch failed for "${keyword}": ${err.message}`);
+          pageFailures.push(`page${page}: ${err.message}`);
           return [];
         });
         pagePromises.push(pagePromise);
@@ -139,10 +154,10 @@ export class ResearchServer {
       }
 
       if (rawResults.length === 0) {
-        return {
-          keyword,
-          results: []
-        };
+        // 有失败页时，空结果不能断言「没有相关内容」，标记为 degraded
+        return pageFailures.length > 0
+          ? { keyword, results: [], degraded: true, failures: pageFailures }
+          : { keyword, results: [] };
       }
 
       // 黑名单过滤：在 embedding 之前过滤，节省 API 调用
@@ -276,6 +291,27 @@ export class ResearchServer {
 
       if (input.searchedKeywords && input.searchedKeywords.length > MAX_KEYWORDS) {
         result.message = `注意：只处理了前 ${MAX_KEYWORDS} 个关键词，跳过了 ${input.searchedKeywords.length - MAX_KEYWORDS} 个`;
+      }
+
+      // 全部关键词都因抓取失败而空：向 agent 明确报错。
+      // 否则 agent 会把「引擎挂了」当成「确实没有结果」，直接放弃检索。
+      if (
+        searchResults
+        && searchResults.length > 0
+        && searchResults.every(r => r.degraded === true)
+      ) {
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              searchResults,
+              degraded: true,
+              message: "所有搜索页均抓取失败，这不代表没有相关结果。可能原因：SearXNG 不可用、上游引擎限流或网络异常。建议重试，或改用 deepseek_search 等其他搜索工具。",
+              failures: searchResults.flatMap(r => r.failures ?? []).slice(0, 5),
+            }, null, 2),
+          }],
+          isError: true,
+        };
       }
 
       return {

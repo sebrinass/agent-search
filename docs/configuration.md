@@ -178,6 +178,86 @@ MAX_DESCRIPTION_LENGTH=200
 
 ---
 
+## 云端搜索配置（可选）
+
+三个商业搜索源都是「配了就自动注册工具」，不配置则完全不注册、不影响本地 SearXNG 搜索。多源并存时由 agent 根据各工具描述自行选择，也可以并行调用多个工具后比对结果。
+
+### DEEPSEEK_API_KEY
+
+DeepSeek 自研搜索 API 密钥，配置后自动启用 `deepseek_search` 工具。
+
+```bash
+DEEPSEEK_API_KEY=sk-xxxxxxxx
+```
+
+**计费：** 按成功请求计费，$0.75 / 1000 次（约 0.005 元/次），与返回条数、正文字数无关；失败、空结果、超时不收费。
+
+**限流：** Search 100 QPS、Fetch 25 QPS，均为账号级。
+
+**说明：** 这是 DeepSeek 官方的网页搜索索引服务，与本地部署的 deepseek 模型无关。
+
+**独有字段：** 返回结果带 `rerankScore`（0-3，`>=1.5` 为高质量）和 `authority`（0-4，`>=3` 为高权威源）；`snippet` 取自 API 的 `summary`（面向模型撰写的长摘要），可直接判断是否值得读取正文。
+
+### DEEPSEEK_API_HOST
+
+DeepSeek API 地址，默认 `https://api.deepseek.com`。如需走自建网关可覆盖。
+
+### DEEPSEEK_SEARCH_TIMEOUT_MS
+
+单次搜索超时（毫秒）。
+
+**默认值：** `20000`
+
+### DEEPSEEK_SUMMARY_MAX_LENGTH
+
+单条结果的 `summary` 截断长度（字符）。
+
+**默认值：** `400`
+
+`summary` 原文约 600-800 字，截断后返回以控制上下文占用。
+
+### MINIMAX_API_KEY
+
+MiniMax 搜索密钥，配置后自动启用 `minimax_search` 工具。Key 在 MiniMax 平台【订阅管理 > Token Plan】获取（`sk-cp-` 开头）。
+
+```bash
+MINIMAX_API_KEY=sk-cp-xxxxxxxx
+```
+
+### MINIMAX_API_HOST
+
+MiniMax API 地址，默认 `https://api.minimaxi.com`。海外订阅改为 `https://api.minimax.io`。
+
+### MINIMAX_SEARCH_TIMEOUT_MS
+
+**默认值：** `20000`
+
+### EXA_API_KEY
+
+Exa 搜索密钥。配置后走直连 API（速度快、额度高）。
+
+```bash
+EXA_API_KEY=xxxxxxxx
+```
+
+不配置则走 Exa 托管匿名通道（有限流，失败时由 agent 自行切换其他工具兜底）。
+
+### ENABLE_EXA_SEARCH
+
+是否注册 `exa_search` 工具。
+
+```bash
+ENABLE_EXA_SEARCH=false
+```
+
+**默认值：** `true`
+
+### EXA_SEARCH_TIMEOUT_MS
+
+**默认值：** `20000`
+
+---
+
 ## URL 读取配置（可选）
 
 ### ENABLE_READABILITY
@@ -282,13 +362,27 @@ ALLOWED_ORIGINS=localhost:3000,example.com
 
 ### LINK_DEDUP_TTL
 
-链接去重缓存 TTL（秒）。
+链接去重池 TTL（秒）。
 
 ```bash
-LINK_DEDUP_TTL=86400
+LINK_DEDUP_TTL=60
 ```
 
-**默认值：** `86400`（24 小时）
+**默认值：** `60`（1 分钟）
+
+**注意：** 去重池是**进程级共享**的（HTTP 模式下所有会话共用一份），语义是「避免同一轮对话内重复返回同一条链接」。设得过长会导致换会话 / 换 agent 再搜同一关键词时，结果被静默滤空——表现为「搜不到东西」，且极难定位。
+
+### LINK_DEDUP_SIZE
+
+链接去重池容量（条目数）。
+
+```bash
+LINK_DEDUP_SIZE=500
+```
+
+**默认值：** `500`
+
+多关键词并发搜索一次就可能写入数十条，池子过小会整池淘汰，导致去重失效。
 
 ### URL_CACHE_TTL
 

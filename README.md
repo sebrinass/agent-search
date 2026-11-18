@@ -71,9 +71,9 @@ npm install -g agent-local-search
 agent-search
 ```
 
-### 方式三：Agent 一键添加
+### 方式三：MCP 客户端直接配置
 
-阅读 [SKILL.md](skill/SKILL.md) 获取 Agent 安装指南。
+把上面的 HTTP 端点（`http://<host>:3000/mcp`）或 stdio 命令加入 MCP 客户端配置即可，工具清单由 `tools/list` 自动发现。
 
 ## 提供的工具
 
@@ -102,6 +102,36 @@ agent-search
 - `paragraphRange` — 段落范围
 - `readHeadings` — 仅返回标题列表
 
+### deepseek_search — DeepSeek 自研搜索（可选）
+
+配置 `DEEPSEEK_API_KEY` 后自动注册。基于 DeepSeek 自研索引，已过滤 SEO 作弊与低质 AIGC。
+
+与其他搜索源相比的独有字段：
+
+- `rerankScore`（0-3）— 相关性综合分，`>=1.5` 为高质量
+- `authority`（0-4）— 权威度分级，`>=3` 为高权威源
+- `snippet` 取自 API 的 `summary` 字段（面向模型撰写的长摘要，约 400 字），可直接据此判断是否值得 `urls_read`
+
+**参数：** `query`（必填，≤128 字符）、`count`（1-50）、`site` / `time_range` / `lang`（自动转换为 `site:` / `after:` / `lang:` 操作符）
+
+**计费：** 按成功请求计费，$0.75 / 1000 次（约 0.005 元/次），与返回条数、正文字数无关；失败、空结果、超时不收费。
+
+### minimax_search — MiniMax 商业搜索（可选）
+
+配置 `MINIMAX_API_KEY` 后自动注册。中文覆盖好，返回官方排序结果（含标题、链接、摘要、日期）及相关搜索建议。
+
+**参数：** `query`（必填）、`count`（1-10）
+
+### exa_search — Exa 语义搜索（可选）
+
+由 `ENABLE_EXA_SEARCH` 控制（默认开启）。基于语义相似度检索，能发现关键词字面不同但语义相近的页面，补足传统搜索引擎的长尾盲区。
+
+配置 `EXA_API_KEY` 走直连 API（快、额度高）；不配置则走托管匿名通道（有限流）。
+
+**参数：** `query`（必填）、`count`（1-10）
+
+> 多源并存时由 agent 根据各工具描述自行选择，也可以并行调用多个工具后自己比对结果。
+
 ## 配置
 
 ### 必填
@@ -125,6 +155,10 @@ agent-search
 | `SEARCH_TIMEOUT_MS` | 50000 | 整词兜底(毫秒);实际生效 = max(此值, 单页抓取 + rerank 超时 + 5s),rerank 慢不会被掐 |
 | `SEARCH_PAGE_TIMEOUT_MS` | 15000 | 单次抓页独立超时（毫秒），一页慢不拖死整词 |
 | `TOP_K` | 5 | 返回结果条数 |
+| `LINK_DEDUP_TTL` | 60 | 链接去重池 TTL（秒），进程级共享，不宜设过长 |
+| `DEEPSEEK_API_KEY` | - | 配置后自动启用 `deepseek_search` |
+| `MINIMAX_API_KEY` | - | 配置后自动启用 `minimax_search` |
+| `EXA_API_KEY` | - | 可选，不配置则走 Exa 匿名通道 |
 
 完整配置请参阅 [docs/configuration.md](docs/configuration.md)。
 
@@ -138,6 +172,9 @@ agent-search
 |------|------|
 | `web-search` | 通用网络搜索（rerank 重排） |
 | `urls-read` | 读取 URL 内容（网页/PDF） |
+| `deepseek-search` | DeepSeek 自研搜索（需 DEEPSEEK_API_KEY） |
+| `minimax-search` | MiniMax 商业搜索（需 MINIMAX_API_KEY） |
+| `exa-search` | Exa 语义搜索（可匿名） |
 | `serve` | 启动 MCP Server |
 
 ### web-search — 网络搜索
@@ -271,9 +308,8 @@ MCP_HTTP_PORT=3000 agent-search
 
 ## 更多资源
 
-- [Skill 文档](skill/SKILL.md) — Agent 安装指南
 - [配置参考](docs/configuration.md) — 完整环境变量说明
-- [安装指南](skill/reference/installation.md) — SearXNG 配置、OpenClaw 集成
+- [安装指南](docs/installation.md) — SearXNG 配置、Docker 部署、OpenClaw 集成
 - [SearXNG 文档](https://docs.searxng.org)
 
 ## 许可证

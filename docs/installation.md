@@ -247,7 +247,7 @@ mcporter call --stdio "npx agent-search" search ...
 mcporter call --stdio "docker run -i --rm -e SEARXNG_URL ghcr.io/sebrinass/agent-search:latest" search ...
 ```
 
-**工具使用示例请参阅 [SKILL.md](../SKILL.md#工具使用示例)**
+**URL 读取与搜索参数请参阅 [配置参考](configuration.md)**
 
 ---
 

@@ -1,6 +1,6 @@
 {
   "name": "agent-local-search",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "为 Agent 提供的本地联网搜索工具，支持 CLI 和 MCP 模式",
   "license": "MIT",
   "author": "sebrinass",
@@ -52,10 +52,10 @@
     "curl-cffi": "^0.1.49",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "happy-dom": "^20.9.0",
+    "happy-dom": "^21.0.4",
     "node-html-markdown": "^2.0.0",
     "quick-lru": "^7.3.0",
-    "undici": "7.29.0",
+    "undici": "7.30.2",
     "unpdf": "^1.8.0"
   },
   "devDependencies": {

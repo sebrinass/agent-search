@@ -3,6 +3,7 @@ import QuickLRU from 'quick-lru';
 import { normalizeUrl } from './url-normalize.js';
 import {
   LINK_DEDUP_TTL,
+  LINK_DEDUP_SIZE,
   URL_CACHE_TTL,
   URL_CACHE_SIZE,
   RERANK_CACHE_SIZE,
@@ -22,16 +23,17 @@ interface UrlCacheValue {
 // ============ 1. 链接去重池 ============
 /**
  * 链接去重池
- * - 大小：100条
- * - TTL：可配置，默认60秒
- * - 功能：避免返回重复链接
+ * - 大小：可配置（LINK_DEDUP_SIZE，默认 500）
+ * - TTL：可配置（LINK_DEDUP_TTL，默认 60 秒）
+ * - 功能：避免同一轮对话内重复返回同一条链接
+ * - 注意：进程级单例，HTTP 模式下所有会话共享，故 TTL 不宜过长
  */
 class LinkDedupPool {
   private pool: QuickLRU<string, number>;
 
   constructor() {
     this.pool = new QuickLRU<string, number>({
-      maxSize: 100,
+      maxSize: LINK_DEDUP_SIZE,
       maxAge: LINK_DEDUP_TTL_MS
     });
   }

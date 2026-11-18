@@ -11,7 +11,7 @@ import {
   packageVersion
 } from '../../src/index.js';
 import { isWebUrlReadArgs } from '../../src/types.js';
-import { createConfigResource, createHelpResource } from '../../src/resources.js';
+import { createConfigResource } from '../../src/resources.js';
 import { testFunction, createTestResults, printTestSummary } from '../helpers/test-utils.js';
 
 const results = createTestResults();
@@ -108,29 +108,9 @@ async function runTests() {
     assert.ok(typeof parsed === 'object');
   }, results);
 
-  await testFunction('Read resource handler - help resource', async () => {
-    const helpUri = "help://usage-guide";
-    const helpContent = createHelpResource();
-    
-    const helpResponse = {
-      contents: [
-        {
-          uri: helpUri,
-          mimeType: "text/markdown",
-          text: helpContent
-        }
-      ]
-    };
-    
-    assert.equal(helpResponse.contents[0].uri, helpUri);
-    assert.equal(helpResponse.contents[0].mimeType, "text/markdown");
-    assert.ok(typeof helpResponse.contents[0].text === 'string');
-  }, results);
-
   await testFunction('Read resource handler - unknown resource error', async () => {
     const testUnknownResource = (uri: string) => {
-      if (uri !== "config://server-config" && 
-          uri !== "help://usage-guide") {
+      if (uri !== "config://server-config") {
         throw new Error(`Unknown resource: ${uri}`);
       }
     };

@@ -21,6 +21,7 @@ import { runTests as runUrlNormalizeTests } from './unit/url-normalize.test.js';
 import { runTests as runConfigTests } from './unit/config.test.js';
 import { runTests as runResearchTests } from './unit/research.test.js';
 import { runTests as runToolHandlersTests } from './unit/tool-handlers.test.js';
+import { runTests as runDeepseekSearchTests } from './unit/deepseek-search.test.js';
 
 import { runTests as runHttpServerTests } from './integration/http-server.test.js';
 import { runTests as runIndexTests } from './integration/index.test.js';
@@ -45,6 +46,7 @@ const testSuites: TestSuite[] = [
   { name: 'Config', category: 'unit', run: runConfigTests },
   { name: 'Research', category: 'unit', run: runResearchTests },
   { name: 'Tool Handlers', category: 'unit', run: runToolHandlersTests },
+  { name: 'DeepSeek Search', category: 'unit', run: runDeepseekSearchTests },
 
   // Integration Tests
   { name: 'HTTP Server', category: 'integration', run: runHttpServerTests },

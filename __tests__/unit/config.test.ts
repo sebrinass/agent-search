@@ -18,6 +18,7 @@ import {
   FETCH_TIMEOUT_MS,
   ENABLE_READABILITY,
   LINK_DEDUP_TTL,
+  LINK_DEDUP_SIZE,
   URL_CACHE_TTL,
   URL_CACHE_SIZE,
   SEARCH_TIMEOUT_MS,
@@ -72,7 +73,11 @@ async function runTests() {
   }, results);
 
   await testFunction('LINK_DEDUP_TTL default value', () => {
-    assert.equal(LINK_DEDUP_TTL, 86400);
+    assert.equal(LINK_DEDUP_TTL, 60);
+  }, results);
+
+  await testFunction('LINK_DEDUP_SIZE default value', () => {
+    assert.equal(LINK_DEDUP_SIZE, 500);
   }, results);
 
   await testFunction('URL_CACHE_TTL default value', () => {

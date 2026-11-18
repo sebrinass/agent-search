@@ -6,8 +6,9 @@ import { fetchAndConvertToMarkdown, PaginationOptions } from "./url-reader.js";
 import { ResearchServer, SearchInput, SEARCH_TOOL } from "./research.js";
 import { minimaxSearch } from "./minimax-search.js";
 import { exaSearch } from "./exa-search.js";
-import { createConfigResource, createHelpResource } from "./resources.js";
-import { FETCH_TIMEOUT_MS, isMinimaxEnabled, isExaEnabled } from "./config.js";
+import { deepseekSearch } from "./deepseek-search.js";
+import { createConfigResource } from "./resources.js";
+import { FETCH_TIMEOUT_MS, isMinimaxEnabled, isExaEnabled, isDeepseekEnabled } from "./config.js";
 
 /**
  * 向 MCP Server 注册所有请求处理器（工具列表、工具调用、日志级别、资源列表、资源读取）。
@@ -45,12 +46,6 @@ export function registerRequestHandlers(server: Server, researchServer: Research
           mimeType: "application/json",
           name: "Server Configuration",
           description: "Current server configuration and environment variables"
-        },
-        {
-          uri: "help://usage-guide",
-          mimeType: "text/markdown",
-          name: "Usage Guide",
-          description: "How to use the Augmented Search server effectively"
         }
       ]
     };
@@ -72,17 +67,6 @@ export function registerRequestHandlers(server: Server, researchServer: Research
           ]
         };
 
-      case "help://usage-guide":
-        return {
-          contents: [
-            {
-              uri: uri,
-              mimeType: "text/markdown",
-              text: createHelpResource()
-            }
-          ]
-        };
-
       default:
         throw new Error(`Unknown resource: ${uri}`);
     }
@@ -94,11 +78,47 @@ export function getToolDefinitions() {
 }
 
 /**
- * 云端搜索工具定义（MiniMax / Exa）。
- * 按环境变量动态注册：MiniMax 配 key 即注册；Exa 由 ENABLE_EXA_SEARCH 控制。
+ * 云端搜索工具定义（DeepSeek / MiniMax / Exa）。
+ * 按环境变量动态注册：DeepSeek / MiniMax 配 key 即注册；Exa 由 ENABLE_EXA_SEARCH 控制。
  */
 export function getCloudSearchTools(): Tool[] {
   const tools: Tool[] = [];
+
+  if (isDeepseekEnabled) {
+    tools.push({
+      name: "deepseek_search",
+      description: `DeepSeek 自研搜索引擎（商业索引，已过滤 SEO 作弊与低质 AIGC）。单关键词搜索，自带质量信号：rerankScore（0-3，>=1.5 为高质量）、authority（0-4，>=3 为高权威源）；snippet 为面向模型的长摘要（约400字），可直接据此判断是否值得 urls_read，省一轮读取。支持 site:/lang:/after:/before: 操作符（由参数转换）。适合：需要权威来源、需要时效过滤、或 web_search 结果里垃圾站过多的场景。`,
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "搜索关键词（单个字符串，最长 128 字符）",
+          },
+          count: {
+            type: "number",
+            description: "返回结果数量（默认10，最大50）",
+            minimum: 1,
+            maximum: 50,
+          },
+          site: {
+            type: "string",
+            description: "限制搜索范围到具体网站域名（转换为 site: 操作符）",
+          },
+          time_range: {
+            type: "string",
+            enum: ["day", "month", "year"],
+            description: "时间范围过滤，转换为 after: 日期操作符",
+          },
+          lang: {
+            type: "string",
+            description: "搜索语言代码，如 zh / en，可逗号分隔多个（转换为 lang: 操作符）",
+          },
+        },
+        required: ["query"],
+      },
+    });
+  }
 
   if (isMinimaxEnabled) {
     tools.push({
@@ -222,13 +242,64 @@ export async function handleSearchTool(
     category: typedArgs.category as string | undefined,
   };
 
-  const result = await researchServer.processSearch(searchInput);
+  // 不把 isError 转成 throw：processSearch 已把可读原因（尤其是 degraded 时的
+  // 故障说明）放在 content 里，throw 会把它替换成一句无信息的通用错误，
+  // agent 就分不清「确实没有结果」和「引擎挂了」了。
+  return await researchServer.processSearch(searchInput);
+}
 
-  if (result.isError) {
-    throw new Error("Search tool execution failed");
+/**
+ * deepseek_search 工具调用：参数校验 + 调用 + 归一化输出壳
+ */
+export async function handleDeepseekSearchTool(
+  server: Server,
+  args: unknown
+): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
+  const typedArgs = args as Record<string, unknown>;
+
+  if (typeof typedArgs.query !== "string" || typedArgs.query.trim() === "") {
+    throw new Error(`deepseek_search 参数错误：query 必须是非空字符串。实际值：${JSON.stringify(typedArgs.query)}`);
   }
 
-  return result;
+  let count = 10;
+  if (typedArgs.count !== undefined) {
+    if (typeof typedArgs.count !== "number" || typedArgs.count < 1 || typedArgs.count > 50) {
+      throw new Error("deepseek_search 参数错误：count 必须是 1-50 之间的数字");
+    }
+    count = typedArgs.count;
+  }
+
+  for (const field of ["site", "time_range", "lang"] as const) {
+    const value = typedArgs[field];
+    if (value !== undefined && typeof value !== "string") {
+      throw new Error(`deepseek_search 参数错误：${field} 必须是字符串。实际值：${JSON.stringify(value)}`);
+    }
+  }
+
+  const result = await deepseekSearch(server, typedArgs.query, count, {
+    site: typedArgs.site as string | undefined,
+    time_range: typedArgs.time_range as string | undefined,
+    lang: typedArgs.lang as string | undefined,
+  });
+
+  if (result.error) {
+    return {
+      content: [{ type: "text", text: JSON.stringify({ source: "deepseek", error: result.error }, null, 2) }],
+      isError: true,
+    };
+  }
+
+  return {
+    content: [{
+      type: "text",
+      text: JSON.stringify({
+        source: "deepseek",
+        keyword: result.keyword,
+        appliedQuery: result.appliedQuery,
+        results: result.results,
+      }, null, 2),
+    }],
+  };
 }
 
 /**
@@ -331,6 +402,9 @@ export async function handleToolCall(
 
       case "web_search":
         return await handleSearchTool(researchServer, args);
+
+      case "deepseek_search":
+        return await handleDeepseekSearchTool(server, args);
 
       case "minimax_search":
         return await handleMinimaxSearchTool(server, args);
