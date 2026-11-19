@@ -29,8 +29,8 @@ FROM searxng/searxng:latest
 
 COPY --from=node:24-bookworm-slim /usr/local/bin/node /usr/local/bin/node
 
-WORKDIR /app
-
+# 不能改 WORKDIR：SearXNG 的 granian 依赖 cwd=/usr/local/searxng 才能 import searx.webapp。
+# agent-search 由 entrypoint 里的子 shell cd /app 切换，不依赖镜像级 WORKDIR。
 COPY --from=builder /app/dist /app/dist
 COPY --from=builder /app/package.json /app/package.json
 COPY --from=prod-deps /app/node_modules /app/node_modules
