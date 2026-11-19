@@ -134,16 +134,6 @@ SEARCH_PAGE_TIMEOUT_MS=15000
 
 **默认值：** `15000`（15 秒）
 
-### SEARCH_LANGUAGE
-
-搜索语言。
-
-```bash
-SEARCH_LANGUAGE=zh-CN
-```
-
-**默认值：** `all`（所有语言）
-
 ### SAFE_SEARCH
 
 安全搜索级别。

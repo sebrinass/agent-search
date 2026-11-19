@@ -19,7 +19,6 @@ import {
   RERANK_TIMEOUT_MS,
   MAX_DESCRIPTION_LENGTH,
   SEARCH_PAGES,
-  SEARCH_LANGUAGE,
   SAFE_SEARCH
 } from "./config.js";
 
@@ -31,8 +30,6 @@ import {
 export interface SearchInput {
   searchedKeywords?: string[];
   site?: string;
-  time_range?: string;
-  lang?: string;
   safeSearch?: number;
   category?: string;
 }
@@ -103,7 +100,7 @@ export class ResearchServer {
    * 执行单个关键词搜索
    * 使用 fetchSinglePage 获取多页结果，集成混合检索和链接去重
    */
-  private async searchKeyword(keyword: string, site?: string, time_range?: string, lang?: string, safeSearch?: number, category?: string): Promise<KeywordSearchResult> {
+  private async searchKeyword(keyword: string, site?: string, safeSearch?: number, category?: string): Promise<KeywordSearchResult> {
     if (!this.server) {
       return {
         keyword,
@@ -113,7 +110,6 @@ export class ResearchServer {
     }
 
     try {
-      const effectiveLang = lang || SEARCH_LANGUAGE;
       const effectiveSafeSearch = safeSearch !== undefined ? safeSearch : SAFE_SEARCH;
 
       // 统一每词抓取页数（默认 1 页）：由 SEARCH_PAGES 单一开关控制，
@@ -127,7 +123,7 @@ export class ResearchServer {
       for (let page = 1; page <= pagesToFetch; page++) {
         // 单页独立超时：一页慢只丢该页，不拖死整词搜索（整词超时由外层 SEARCH_TIMEOUT_MS 兜底）
         const pagePromise = Promise.race([
-          fetchSinglePage(this.server, keyword, page, time_range, effectiveLang, effectiveSafeSearch, site, category),
+          fetchSinglePage(this.server, keyword, page, effectiveSafeSearch, site, category),
           new Promise<Array<{ title: string; content: string; url: string; score: number }>>((_, reject) => {
             setTimeout(() => reject(new Error(`单页搜索超时(${SEARCH_PAGE_TIMEOUT_MS}ms)`)), SEARCH_PAGE_TIMEOUT_MS);
           })
@@ -219,8 +215,6 @@ export class ResearchServer {
   private async searchKeywords(
     keywords: string[],
     site?: string,
-    time_range?: string,
-    lang?: string,
     safeSearch?: number,
     category?: string
   ): Promise<KeywordSearchResult[]> {
@@ -249,7 +243,7 @@ export class ResearchServer {
         setTimeout(() => reject(new Error('搜索超时')), effectiveTimeout);
       });
 
-      const searchPromise = this.searchKeyword(keyword, site, time_range, lang, safeSearch, category);
+      const searchPromise = this.searchKeyword(keyword, site, safeSearch, category);
 
       try {
         return await Promise.race([searchPromise, timeoutPromise]);
@@ -280,7 +274,7 @@ export class ResearchServer {
       let searchResults: KeywordSearchResult[] | undefined;
 
       if (input.searchedKeywords && input.searchedKeywords.length > 0) {
-        searchResults = await this.searchKeywords(input.searchedKeywords, input.site, input.time_range, input.lang, input.safeSearch, input.category);
+        searchResults = await this.searchKeywords(input.searchedKeywords, input.site, input.safeSearch, input.category);
       }
 
       const result: ResearchResult = {};
@@ -333,7 +327,7 @@ export class ResearchServer {
  */
 export const SEARCH_TOOL: Tool = {
   name: "web_search",
-  description: `通用网络搜索工具。并发搜索多个关键词，经 cross-encoder rerank 重排后返回最相关结果。支持按分类、时间、语言限定搜索范围`,
+  description: `通用网络搜索工具。并发搜索多个关键词，经 cross-encoder rerank 重排后返回最相关结果。支持按分类限定搜索范围`,
   inputSchema: {
     type: "object",
     properties: {
@@ -345,15 +339,6 @@ export const SEARCH_TOOL: Tool = {
       site: {
         type: "string",
         description: "限制搜索范围到具体网站域名"
-      },
-      time_range: {
-        type: "string",
-        enum: ["day", "month", "year"],
-        description: "时间范围过滤：day=最近一天，month=最近一月，year=最近一年"
-      },
-      lang: {
-        type: "string",
-        description: "搜索语言（如 en, zh, all）"
       },
       safeSearch: {
         type: "number",

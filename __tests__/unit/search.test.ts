@@ -46,7 +46,7 @@ async function runTests() {
     });
 
     try {
-      await fetchSinglePage(createMockServer() as any, 'test query', 2, 'day', 'en', 1);
+      await fetchSinglePage(createMockServer() as any, 'test query', 2, 1);
     } catch (error: any) {
     }
 

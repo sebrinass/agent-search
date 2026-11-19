@@ -45,7 +45,6 @@ export const SEARCH_TIMEOUT_MS = envInt('SEARCH_TIMEOUT_MS', 50000, { min: 1 });
 // 一个慢页只影响该页，不拖死整个关键词的并发抓取。
 // 注意：这是 fetch 抓页的超时，与 rerank 无关（rerank 走 RERANK_TIMEOUT_MS，本地模型慢可接受）。
 export const SEARCH_PAGE_TIMEOUT_MS = envInt('SEARCH_PAGE_TIMEOUT_MS', 15000, { min: 1 });
-export const SEARCH_LANGUAGE = process.env.SEARCH_LANGUAGE || 'all';
 export const SAFE_SEARCH = envInt('SAFE_SEARCH', 0, { min: 0, max: 2 });
 
 // ============ Rerank 结果数量 ============

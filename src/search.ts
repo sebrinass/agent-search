@@ -33,8 +33,6 @@ export async function fetchSinglePage(
   server: Server,
   query: string,
   pageno: number = 1,
-  time_range?: string,
-  language: string = "all",
   safesearch?: number,
   site?: string,
   category?: string
@@ -71,17 +69,6 @@ export async function fetchSinglePage(
   const enginesParam = getEnginesParam();
   if (enginesParam) {
     url.searchParams.set("engines", enginesParam);
-  }
-
-  if (
-    time_range !== undefined &&
-    ["day", "month", "year"].includes(time_range)
-  ) {
-    url.searchParams.set("time_range", time_range);
-  }
-
-  if (language && language !== "all") {
-    url.searchParams.set("language", language);
   }
 
   if (safesearch !== undefined && [0, 1, 2].includes(safesearch)) {

@@ -43,26 +43,16 @@ mkdir -p ~/agent-search && cd ~/agent-search
 
 ```yaml
 services:
-  searxng:
-    image: searxng/searxng:latest
-    container_name: searxng
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./searxng:/etc/searxng:rw
-    environment:
-      - SEARXNG_BASE_URL=http://localhost:8080/
-    restart: unless-stopped
-
   agent-search:
     image: ghcr.io/sebrinass/agent-search:latest
     container_name: agent-search
     ports:
-      - "3000:3000"
+      - "8080:8080"   # 内置 SearXNG
+      - "1234:1234"   # MCP HTTP
+    volumes:
+      - ./searxng:/etc/searxng:rw
     environment:
-      - SEARXNG_URL=http://searxng:8080
-    depends_on:
-      - searxng
+      - RERANK_BASE_URL=http://host.docker.internal:11434
     restart: unless-stopped
 ```
 
@@ -76,7 +66,7 @@ docker compose up -d
 
 ```bash
 curl http://localhost:8080/search?q=test
-curl http://localhost:3000/health
+curl http://localhost:1234/health
 ```
 
 ---

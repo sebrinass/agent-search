@@ -30,17 +30,14 @@
 
 ### 前置条件
 
-1. 一个 SearXNG 实例：
+一个 rerank 服务（二选一）：
 
-```bash
-docker run -d --name searxng -p 8080:8080 searxng/searxng:latest
-```
-
-2. 一个 rerank 服务（二选一）：
-   - 本地推理（如 Ollama 跑 reranker 模型）：`RERANK_BASE_URL=http://localhost:11434`
-   - 云端 API（Jina/Cohere/SiliconFlow/Together 等）：配置 `RERANK_BASE_URL` + `RERANK_API_KEY`
+- 本地推理（如 Ollama 跑 reranker 模型）：`RERANK_BASE_URL=http://localhost:11434`
+- 云端 API（Jina/Cohere/SiliconFlow/Together 等）：配置 `RERANK_BASE_URL` + `RERANK_API_KEY`
 
 > **注意**：rerank 是唯一的搜索排序方式，`RERANK_BASE_URL` 或 `RERANK_API_KEY` 为必填（MCP 服务模式启动时强制校验）。
+>
+> SearXNG 已内置在镜像里（同容器双进程），不需要单独部署。
 
 ### 环境变量配置
 
@@ -54,12 +51,18 @@ cp .env.example .env
 ### 方式一：Docker（推荐，HTTP 部署）
 
 ```bash
-docker run -d --name agent-search -p 3000:3000 \
-  -e SEARXNG_URL=http://host.docker.internal:8080 \
+docker run -d --name agent-search \
+  -p 8080:8080 -p 1234:1234 \
+  -v "$(pwd)/searxng:/etc/searxng" \
   -e RERANK_BASE_URL=http://host.docker.internal:11434 \
-  -e MCP_HTTP_PORT=3000 \
   ghcr.io/sebrinass/agent-search:latest
 ```
+
+两个端口的分工：`8080` 是内置 SearXNG（可直接访问，便于调试引擎配置），`1234` 是 MCP HTTP 端点（`/mcp` 与 `/health`）。
+
+`/etc/searxng` 挂载可选：不挂载时容器用镜像内模板生成默认配置；需要自定义引擎、过滤、代理等设置时挂载出来改 `settings.yml`，重启容器即生效。
+
+如果已有外部 SearXNG 实例，也可以覆盖 `SEARXNG_URL` 指向它（此时容器内的 SearXNG 仍会启动，但不承载搜索流量）。
 
 HTTP 模式默认**有状态**（initialize 返回 mcp-session-id，兼容 Hermes 等依赖会话的客户端）；
 如需多副本/负载均衡部署，设置 `MCP_SESSION_MODE=stateless` 切换为无状态（无会话 ID，无需粘性会话）。
@@ -87,8 +90,6 @@ agent-search
 **可选参数：**
 - `category` — 搜索分类（general, news, science, it, images, videos, files, music）
 - `site` — 限制搜索域名
-- `time_range` — 时间范围过滤（day, month, year）
-- `lang` — 搜索语言（如 en, zh, all）
 - `safeSearch` — 安全搜索级别（0=关闭，1=中等，2=严格）
 
 ### urls_read — URL 内容读取
@@ -186,11 +187,11 @@ agent-search web-search -q "RAG 技术"
 # 多关键词并发搜索（推荐）
 agent-search web-search -q "RAG" "向量数据库" "Embedding"
 
-# 限制域名和时间范围
-agent-search web-search -q "React 19" --site github.com --time-range month
+# 限制域名
+agent-search web-search -q "React 19" --site github.com
 
-# 指定分类和语言
-agent-search web-search -q "TypeScript" --category it --lang en
+# 指定分类
+agent-search web-search -q "TypeScript" --category it
 
 # JSON 格式输出
 agent-search web-search -q "RAG 技术" --json
@@ -208,8 +209,6 @@ SEARXNG_URL=http://localhost:8080 RERANK_BASE_URL=http://localhost:11434 agent-s
 |------|------|
 | `-q, --query <keywords...>` | 搜索关键词（必填，最多 3 个） |
 | `-s, --site <domain>` | 限制搜索域名 |
-| `--time-range <range>` | 时间范围: day, month, year |
-| `--lang <language>` | 搜索语言（默认 all） |
 | `--safe-search <level>` | 安全搜索级别: 0, 1, 2（默认 0） |
 | `--json` | 以 JSON 格式输出结果 |
 

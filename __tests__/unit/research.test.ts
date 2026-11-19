@@ -80,8 +80,6 @@ await testFunction('processSearch returns message when keywords exceed MAX_KEYWO
     const input: SearchInput = {
       searchedKeywords: [],
       site: 'example.com',
-      time_range: 'day',
-      lang: 'en',
       safeSearch: 1
     };
     const result = await server.processSearch(input);
@@ -140,9 +138,7 @@ await testFunction('processSearch returns message when keywords exceed MAX_KEYWO
 
     const input: SearchInput = {
       searchedKeywords: ['test query'],
-      lang: 'en',
-      safeSearch: 1,
-      time_range: 'day'
+      safeSearch: 1
     };
     await server.processSearch(input);
 
@@ -151,9 +147,11 @@ await testFunction('processSearch returns message when keywords exceed MAX_KEYWO
     assert.ok(url.pathname.includes('search'), `Path should contain 'search', got: ${url.pathname}`);
     assert.equal(url.searchParams.get('q'), 'test query');
     assert.equal(url.searchParams.get('format'), 'json');
-    assert.equal(url.searchParams.get('language'), 'en');
     assert.equal(url.searchParams.get('safesearch'), '1');
-    assert.equal(url.searchParams.get('time_range'), 'day');
+    // time_range / language 均已移除：实测前者会让召回掉到 1/4 且丢失发布日期字段，
+    // 后者对中文查询几乎无效（指定 en 仍返回 91% 中文），故不再下发。
+    assert.equal(url.searchParams.has('time_range'), false);
+    assert.equal(url.searchParams.has('language'), false);
 
     fetchMocker.restore();
   }, results);
@@ -190,7 +188,7 @@ await testFunction('processSearch returns message when keywords exceed MAX_KEYWO
       `Expected path to contain /search, got ${urlNoSlash.pathname}`);
   }, results);
 
-  await testFunction('fetchSinglePage uses default language when lang not specified', async () => {
+  await testFunction('fetchSinglePage never sends language param', async () => {
     const server = new ResearchServer();
     server.setServer(createMockServer());
 
@@ -204,10 +202,10 @@ await testFunction('processSearch returns message when keywords exceed MAX_KEYWO
 
     const capturedUrl = getCapturedUrl();
     const url = new URL(capturedUrl);
-    // When lang is not specified, SEARCH_LANGUAGE (default 'all') is used
-    // 'all' should not set the language parameter
+    // language 参数已移除：实测 SearXNG 的 language 过滤基本无效（中文查询指定 en
+    // 仍返回 91% 中文），且会改变引擎池导致结果不稳，故不再下发。
     assert.equal(url.searchParams.has('language'), false,
-      'Should not set language param when lang is "all"');
+      'Should never set language param');
 
     fetchMocker.restore();
   }, results);

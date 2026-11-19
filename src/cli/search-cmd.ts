@@ -10,8 +10,6 @@ export function registerSearchCommand(program: Command) {
     .description("通用网络搜索工具（经 rerank 重排）")
     .requiredOption("-q, --query <keywords...>", "搜索关键词（最多3个）")
     .option("-s, --site <domain>", "限制搜索域名")
-    .option("--time-range <range>", "时间范围: day, month, year")
-    .option("--lang <language>", "搜索语言", "all")
     .option("--safe-search <level>", "安全搜索级别: 0, 1, 2", "0")
     .option("-c, --category <category>", "搜索分类: general, news, science, it, images, videos, files, music")
     .option("--json", "以 JSON 格式输出结果", false)
@@ -32,8 +30,6 @@ export function registerSearchCommand(program: Command) {
       const searchInput: SearchInput = {
         searchedKeywords: opts.query,
         site: opts.site,
-        time_range: opts.timeRange,
-        lang: opts.lang,
         safeSearch: parseInt(opts.safeSearch, 10),
         category: opts.category,
       };

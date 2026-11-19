@@ -1,27 +1,20 @@
 services:
-  searxng:
-    image: searxng/searxng:latest
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./searxng-settings.yml:/etc/searxng/settings.yml:ro
-    environment:
-      - SEARXNG_BASE_URL=http://localhost:8080/
-    cap_drop:
-      - ALL
-    cap_add:
-      - CHOWN
-      - SETGID
-      - SETUID
-
   agent-search:
     build: .
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "8080:8080"   # SearXNG
+      - "1234:1234"   # MCP HTTP
+    volumes:
+      # SearXNG 配置目录。entrypoint 会修正目录属主，所以必须挂目录而非单文件只读。
+      # 首次启动若为空会自动从镜像模板生成 settings.yml。
+      - ./data/searxng:/etc/searxng
     environment:
-      - SEARXNG_URL=http://searxng:8080
-      - MCP_HTTP_PORT=3000
-    depends_on:
-      - searxng
+      - SEARXNG_URL=http://127.0.0.1:8080
+      - MCP_HTTP_PORT=1234
+      # 可选：rerank 与云端搜索（按需取消注释）
+      # - RERANK_BASE_URL=http://192.168.1.3:8863/v1
+      # - RERANK_MODEL=mmbert-reranker
+      # - MINIMAX_API_KEY=
+      # - EXA_API_KEY=
+      # - DEEPSEEK_API_KEY=

@@ -10,7 +10,6 @@ import { strict as assert } from 'node:assert';
 import {
   DEFAULT_SEARCH_PAGES,
   SEARCH_PAGES,
-  SEARCH_LANGUAGE,
   SAFE_SEARCH,
   TOP_K,
   MAX_KEYWORDS,
@@ -86,10 +85,6 @@ async function runTests() {
 
   await testFunction('URL_CACHE_SIZE default value', () => {
     assert.equal(URL_CACHE_SIZE, 100);
-  }, results);
-
-  await testFunction('SEARCH_LANGUAGE default value', () => {
-    assert.equal(SEARCH_LANGUAGE, 'all');
   }, results);
 
   await testFunction('SAFE_SEARCH default value', () => {

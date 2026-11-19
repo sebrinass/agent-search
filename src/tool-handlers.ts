@@ -236,8 +236,6 @@ export async function handleSearchTool(
   const searchInput: SearchInput = {
     searchedKeywords: typedArgs.searchedKeywords as string[] | undefined,
     site: typedArgs.site as string | undefined,
-    time_range: typedArgs.time_range as string | undefined,
-    lang: typedArgs.lang as string | undefined,
     safeSearch: typedArgs.safeSearch as number | undefined,
     category: typedArgs.category as string | undefined,
   };

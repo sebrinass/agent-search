@@ -74,8 +74,6 @@ async function runTests() {
     const result = await handleSearchTool(researchServer, {
       searchedKeywords: ['test'],
       site: 'example.com',
-      time_range: 'day',
-      lang: 'en',
       safeSearch: 1
     });
 

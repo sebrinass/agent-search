@@ -1,7 +1,11 @@
 name: Build & Publish agent-search
 
-# 手动触发为主：稳定版本不频繁发布，需要时手动跑
+# 定时构建：基础镜像 searxng/searxng 用 latest，靠定期重建跟随上游更新。
+# 也保留手动触发，用于只发 agent-search 自身改动时立刻出镜像。
 on:
+  schedule:
+    # 每周一 06:23 UTC（北京时间 14:23），跟随上游 searxng 更新
+    - cron: "23 6 * * 1"
   workflow_dispatch:
     inputs:
       version:
